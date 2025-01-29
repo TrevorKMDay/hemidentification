@@ -3,9 +3,13 @@ irb/
 
 .R*
 
+# Google Sheets files
 **/*.gdoc
-**/~$**
+**/*.gsheet
 
 # code from Andrew/Saul, already tracked
 connectome/
 .Rproj.user
+
+# backed-up files
+**/~$**

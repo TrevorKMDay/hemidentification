@@ -1,14 +1,12 @@
 library(tidyverse)
 
-setwd(paste0("~/Library/CloudStorage/GoogleDrive-td758@georgetown.edu/",
-             "My Drive/Projects/hemisphere_fingerprinting/"))
-
 # Load data ====
 
-dat0 <- read_csv("data/unrestricted_data.csv", show_col_types = FALSE)  %>%
+dat0 <- read_csv(here("data", "unrestricted_data.csv"),
+                 show_col_types = FALSE) %>%
   select_all(~str_remove_all(., "-|3T_"))
 
-rdat0 <- read_csv("data/restricted_data.csv", show_col_types = FALSE)
+rdat0 <- read_csv(here("data", "restricted_data.csv"), show_col_types = FALSE)
 
 ## Tidy up data ====
 
@@ -18,8 +16,8 @@ dat <- dat0 %>%
                            "anat_exclude"),
     rs_include = if_else(RSfMRI_PctCompl >= 50, "rs_include", "rs_exclude"),
     task_include = if_else(Full_Task_fMRI, "task_include", "task_exclude"),
-    rstask_include = if_else(rs_include == "rs_include" & 
-                              task_include == "task_include", 
+    rstask_include = if_else(rs_include == "rs_include" &
+                              task_include == "task_include",
                             "rstask_include", "rstask_exclude")
   ) %>%
   select(Subject, Gender, matches("^T._Count"), RSfMRI_PctCompl,
@@ -47,11 +45,6 @@ rdat <- rdat0 %>%
   mutate(
     hand1 = if_else(ehi > 0, "right", "left"),
     hand2 = if_else(ehi > 50, "right2", "non-right")
-  ) %>%
-  group_by(family) %>%
-  mutate(
-    fam_n = n(),
-    fam_m_age = mean(age)
   )
 
 rdat2 <- left_join(rdat, dat_exclusions, by = join_by(sub)) %>%
@@ -67,7 +60,7 @@ rdat2 <- left_join(rdat, dat_exclusions, by = join_by(sub)) %>%
 ## HI1 ====
 
 hi1 <- filter(rdat2, hand1 == "right")
-table(hi1$rstask_include, hi1$rs_include)
+# table(hi1$rstask_include, hi1$rs_include)
 
 ## HI2a ====
 
@@ -86,73 +79,89 @@ rdat2 %>%
     n = n()
   )
 
-# Do the balancing
+rm(dat, dat_exclusions, dat0, rdat, rdat0, hi1)
 
-rdat2_fams <- rdat2 %>%
-  group_by(family, fam_n, fam_m_age) %>%
-  nest() 
+# Do the balancing ====
 
-create_split <- function(fams) {
-  
-  n1 <- nrow(fams)
-  ntrain <- round(0.8 * n1)
-  
-  row <- 1:n1
-  training <- sample.int(n1, ntrain)
-  test <- row[!(row %in% training)]
-  
-  train_set <- unnest(fams[training, ], data)
-  test_set <- unnest(fams[test, ], data)
-  
-  return(tibble(train = list(train_set), test = list(test_set)))
-  
+# These are the overall ratios to check the folds and splits against
+
+# Georgetown's ZIP code
+set.seed(20057)
+
+ratios <- list()
+ratios["male"] <- sum(rdat2$gender == "M") / nrow(rdat2)
+ratios["hand1"] <- sum(rdat2$hand1 == "right") / nrow(rdat2)
+ratios["hand2"] <- sum(rdat2$hand2 == "right2") / nrow(rdat2)
+mean_age <- mean(rdat2$age)
+
+# Create the five mutually exclusive folds
+folds <- rdat2 %>%
+  select(-anat_include, -rs_include, -ehi) %>%
+  mutate(
+    fold = cluster_ra(clusters = family, conditions = LETTERS[1:5])
+  ) %>%
+  group_by(fold) %>%
+  nest(.key = "test") %>%
+  arrange(fold) %>%
+  mutate(
+    size = map_int(test, nrow)
+  )
+
+# Stop here and check if the sizes are unequally distributed
+size_chisq <- chisq.test(tibble(folds$size, nrow(rdat2) / 5),
+                         simulate.p.value = TRUE)
+
+# This should be > .05
+size_chisq$p.value
+
+get_complement <- function(src, exclude_subs) {
+
+  # This function gets all the rows that aren't included in the test sample
+
+  result <- src %>%
+    filter(
+      !(sub %in% exclude_subs)
+    )
+
+  return(result)
+
 }
 
-random_splits <- tibble(f = 1:100) %>%
-  rowwise() %>%
+folds_tt <- folds %>%
+  select(-size) %>%
   mutate(
-    split = list(create_split(rdat2_fams))
+    train = map(test, ~get_complement(rdat2, .x$sub))
   ) %>%
-  unnest(split) %>%
+  pivot_longer(c(test, train), names_to = "tt_group", values_to = "data") %>%
   mutate(
-    train_ratio = map2_dbl(train, test, ~ nrow(.x) / (nrow(.x) + nrow(.y))),
-    
-    train_men = map_dbl(train, ~sum(.x$gender == "M") / nrow(.x)),
-    test_men = map_dbl(test, ~sum(.x$gender == "M") / nrow(.x)),
-    
-    train_mean_age = map_dbl(train, ~mean(.x$age)),
-    test_mean_age = map_dbl(test, ~mean(.x$age)),
-    
-    train_rhand1 = map_dbl(train, ~sum(.x$hand1 == "right") / nrow(.x)),
-    test_rhand1 = map_dbl(test, ~sum(.x$hand1 == "right") / nrow(.x)),
-    
-    train_rhand2 = map_dbl(train, ~sum(.x$hand2 == "right2") / nrow(.x)),
-    test_rhand2 = map_dbl(test, ~sum(.x$hand2 == "right2") / nrow(.x)),
-    
+    n = map_int(data, nrow),
+    age = map_dbl(data, ~mean(.x$age)),
+    male_pct = map_dbl(data, ~sum(.x$gender == "M")) / n,
+    hand1R_pct = map_dbl(data, ~sum(.x$hand1 == "right")) / n,
+    hand2R_pct = map_dbl(data, ~sum(.x$hand2 == "right2")) / n
   )
 
+# Check that the ages and ratios in each group don't differ from the mean
 
-rdat2_male_ratio <- sum(rdat2$gender == "M") / nrow(rdat2)
-rdat2_hand1_ratio <- sum(rdat2$hand1 == "right") / nrow(rdat2)
-rdat2_hand2_ratio <- sum(rdat2$hand2 == "right2") / nrow(rdat2)
+age_chisq <- tibble(age = folds_tt$age, avg_age = mean_age) %>%
+  chisq.test(simulate.p.value = TRUE)
 
-balanced_splits <- random_splits %>%
-  mutate(
-    age_error = abs(test_mean_age - train_mean_age) / ((test_mean_age + train_mean_age) / 2)
-  ) %>%
-  filter(
-    
-    abs(train_ratio - 0.8) < .02,
-    age_error < .02,
-    
-    abs(train_men - rdat2_male_ratio) < .02,
-    abs(test_men  - rdat2_male_ratio) < .02,
-    
-    abs(train_rhand1 - rdat2_hand1_ratio) < .02,
-    abs(test_rhand1 - rdat2_hand1_ratio) < .02,
-    
-    abs(train_rhand2 - rdat2_hand2_ratio) < .02,
-    abs(test_rhand2 - rdat2_hand2_ratio) < .02
-    
-  )
+gender_chisq <- tibble(m = folds_tt$male_pct, avg_m = ratios$male) %>%
+  chisq.test(simulate.p.value = TRUE)
 
+hand1R_chisq <- tibble(m = folds_tt$hand1R_pct, avg_hand1R = ratios$hand1) %>%
+  chisq.test(simulate.p.value = TRUE)
+
+hand2R_chisq <- tibble(m = folds_tt$hand2R_pct, avg_hand2R = ratios$hand2) %>%
+  chisq.test(simulate.p.value = TRUE)
+
+sapply(list(age_chisq, gender_chisq, hand1R_chisq, hand2R_chisq),
+       function(x) x$p.value)
+
+folds_tt_final <- folds_tt %>%
+  select(fold, tt_group, data) %>%
+  unnest(data)
+
+# lefties
+(1 - ratios$hand1) * c(217, 897)
+(1 - ratios$hand2) * c(217, 897)
