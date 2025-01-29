@@ -4,6 +4,8 @@ irb/
 .R*
 
 **/*.gdoc
+**/~$**
 
 # code from Andrew/Saul, already tracked
 connectome/
+.Rproj.user
