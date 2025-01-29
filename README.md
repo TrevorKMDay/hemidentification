@@ -9,26 +9,17 @@ The project especially relies on results and code from Hannum et al. (2023).
 
 ## Description of code
 
-## code/fake_hemiconnectome/
+`code/fake_hemiconnectome/`: Code to generate a schematic (hemi-)connectome
+    with four symmetric ROIs per hemisphere, a la Glasser parcellation.
 
-Code to generate a schematic (hemi-)connectome with four symmetric ROIs per
-hemisphere, a la Glasser parcellation.
+`code/fold_testing/`: Code to test the creation of *k*-folds for model
+    evaluation, using HCP-YA demographic data.
 
-## code/fold_testing/
+`code/formula`: TeX code to generate the formula for Matthew's correlation
+    coefficient, because the Google Docs equation editor is inadequate.
 
-Code to test the creation of *k*-folds for model evaluation, using HCP-YA
-demographic data.
-
-## code/formula
-
-TeX code to generate the formula for Matthew's correlation coefficient, because
-the Google Docs equation editor is inadequate.
-
-## code/hypotheses/
-
-Code to generate the hypothesis figures from the registered report.
-
-
+`code/hypotheses/`: Code to generate the hypothesis figures from the registered
+    report.
 
 ## References
 
