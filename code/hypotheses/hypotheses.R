@@ -5,7 +5,7 @@ library(here)
 library(ggimage)
 library(extrafont)
 
-setwd(here("code"))
+setwd(here("code", "hypotheses"))
 
 # Load emoji ====
 
