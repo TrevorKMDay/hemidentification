@@ -1,4 +1,6 @@
 library(tidyverse)
+library(here)
+library(randomizr)
 
 # Load data ====
 
@@ -47,15 +49,51 @@ rdat <- rdat0 %>%
     hand2 = if_else(ehi > 50, "right2", "non-right")
   )
 
+# Everyone with sufficient anatomical and RS data, butpossibly insufficient
+#   task data.
 rdat2 <- left_join(rdat, dat_exclusions, by = join_by(sub)) %>%
   filter(
     # Sufficient anat data
     anat_include == "anat_include",
     # Sufficient tfMRI or rsfMRI data
     rstask_include == "rstask_include" | rs_include == "rs_include",
-  )
+  ) %>%
+  select(-anat_include)
 
 # Should be 1087
+
+lefties <- rdat2 %>%
+  filter(
+    hand1 == "left"
+  )
+
+# Unrelated righties - randomly pick 100 for balanced sampling
+righties <- rdat2 %>%
+  filter(
+    hand1 == "right",
+    !(family %in% lefties$family)
+  ) %>%
+  slice_sample(n = nrow(lefties))
+
+list1 <- bind_rows(righties, lefties) %>%
+  select(sub, hand1) %>%
+  arrange(sub)
+
+leftovers <- rdat2 %>%
+  filter(
+    !(sub %in% list1$sub)
+  ) %>%
+  mutate(
+    group = row_number() %/% 240
+  ) %>%
+  nest(.by = group)
+
+write_csv(list1, here("list1.csv"))
+write_csv(leftovers$data[[1]], here("list2.csv"))
+write_csv(leftovers$data[[2]], here("list3.csv"))
+write_csv(leftovers$data[[3]], here("list4.csv"))
+write_csv(leftovers$data[[4]], here("list5.csv"))
+
 
 ## HI1 ====
 
@@ -165,3 +203,26 @@ folds_tt_final <- folds_tt %>%
 # lefties
 (1 - ratios$hand1) * c(217, 897)
 (1 - ratios$hand2) * c(217, 897)
+
+# Get 30 training subs from Fold A for testing purposes
+# a_train_rh <- folds_tt_final %>%
+#   filter(
+#     fold == "A",
+#     tt_group == "train",
+#     hand1 == "right"
+#   ) %>%
+#   slice_sample(n = 30) %>%
+#   select(sub, fold, tt_group, hand1)
+#
+# write_csv(a_fold_rh, "/Volumes/thufir/HCPYA/lists/A_train_RH_n30.csv")
+
+a_test_rh <- folds_tt_final %>%
+  filter(
+    fold == "A",
+    tt_group == "test",
+    hand1 == "right"
+  ) %>%
+  slice_sample(n = 30) %>%
+  select(sub, fold, tt_group, hand1)
+
+write_csv(a_test_rh, "/Volumes/thufir/HCPYA/lists/A_test_RH_n30.csv")

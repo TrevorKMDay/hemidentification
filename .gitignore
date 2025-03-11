@@ -13,3 +13,4 @@ connectome/
 
 # backed-up files
 **/~$**
+.DS_Store
