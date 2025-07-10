@@ -115,7 +115,8 @@ shuffle_matrix <- function(mat, tibble = TRUE) {
 
 }
 
-bootstrap_pmatrix <- function(pvalues, nets, n = 10000) {
+bootstrap_pmatrix <- function(pvalues, nets, n = 10000,
+                              drop = c("OAN", "vMN", "pMN")) {
 
   require(infer)
 
@@ -127,7 +128,7 @@ bootstrap_pmatrix <- function(pvalues, nets, n = 10000) {
   message(paste("Total estimated time:", est_time, "minutes"))
 
   # Calculate the ground truth
-  pvalues_summary <- summarize_tibble_by_net(pvalues, nets)
+  pvalues_summary <- summarize_tibble_by_net(pvalues, nets, drop = drop)
 
   pmatrix <- pvalues %>%
     select(ROI1, ROI2, sig) %>%
@@ -148,7 +149,7 @@ bootstrap_pmatrix <- function(pvalues, nets, n = 10000) {
   # Summarize each shuffled matrix by network and join true values
   bootstrap2 <- bootstrap1 %>%
     mutate(
-      result = map(mat, ~summarize_tibble_by_net(.x, nets_ordered),
+      result = map(mat, ~summarize_tibble_by_net(.x, nets_ordered, drop = drop),
                    .progress = TRUE)
     ) %>%
     select(-mat) %>%
@@ -210,7 +211,8 @@ remove_tri <- function(x, upper = FALSE) {
   result <- left_join(x, rows_to_drop) %>%
     filter(
       keep
-    )
+    ) %>%
+    select(-keep)
 
   return(result)
 
