@@ -15,7 +15,7 @@ nets_ordered <- read_rds("nets_ordered.rds")
 
 high_value_p001 <- test_4class_ps %>%
   filter(
-    p1 < .001
+    p < .001
   ) %>%
   separate_wider_delim(feature, "_", names = c("ROI1", "ROI2"))
 
@@ -37,7 +37,7 @@ ggplot(filter(high_value_nodes_p001, n > 2), aes(y = rois, x = name)) +
 # Matrices ====
 
 test_4class_wide <- test_4class_ps %>%
-  pivot_wider(names_from = name, values_from = p1, id_cols = feature) %>%
+  pivot_wider(names_from = name, values_from = p, id_cols = feature) %>%
   separate_wider_delim(feature, "_", names = c("ROI1", "ROI2"))
 
 # These are symmetric matrices of p values, in long format
@@ -168,20 +168,27 @@ g3_results <- bootstrap_pmatrix(g3ps, nets = nets_ordered) %>%
 
 results <- bind_rows(g1_results, g2_results, g3_results, .id = "LD") %>%
   mutate(
-    sig2 = if_else(pvalue < 0.05, sig, NA),
-    label = if_else(pvalue < .05, as.character(sig), "")
+    sig = replace(sig, sig == 0, NA),
+    prop = replace(prop, prop == 0, NA),
+    sig_label = case_when(
+      pvalue < .001 ~ "***",
+      pvalue < .01 ~ "**",
+      pvalue < .05 ~ "*",
+      TRUE ~ ""
+    ),
   ) %>%
   filter(
     !(net1 %in% c("OAN", "pMN", "vMN")),
     !(net2 %in% c("OAN", "pMN", "vMN"))
   )
 
-ggplot(results, aes(x = net1, y = net2, fill = sig2)) +
+ggplot(results, aes(x = net1, y = net2, fill = prop)) +
   geom_tile() +
-  geom_text(aes(label = label)) +
-  viridis::scale_fill_viridis() +
+  geom_text(aes(label = sig_label)) +
+  scale_fill_viridis(limits = c(0, NA)) +
   scale_y_discrete(limits = rev) +
   facet_wrap(vars(LD)) +
   coord_equal() +
   theme_bw() +
-  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  labs(x = NULL, y = NULL)

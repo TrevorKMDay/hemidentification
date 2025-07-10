@@ -177,7 +177,7 @@ if (!file.exists(bs_file2)) {
 
 } else {
 
-  bs2 <- qread(bs_file, nthreads = 2)
+  bs2 <- qread(bs_file2, nthreads = 2)
 
 }
 
