@@ -3,13 +3,15 @@ library(mltools)
 library(doParallel)
 library(foreach)
 
-# Parallel setup
+select <- dplyr::select
+
+# Parallel setup ====
 
 cores <- detectCores()
 cl <- makeCluster(cores[1] - 1) #not to overload your computer
 registerDoParallel(cl)
 
-# Function to boostrap mcc
+# Function to boostrap MCC ====
 
 bootstrap_mcc <- function(data, R = 1000, ground = "ground",
                           predicted = "predicted", levels = NULL) {
@@ -23,8 +25,16 @@ bootstrap_mcc <- function(data, R = 1000, ground = "ground",
     g <- unlist(new_data[, ground], use.names = FALSE)
     p <- unlist(new_data[, predicted], use.names = FALSE)
 
-    if (is.null(levels))
-      levels <- unique(g)
+    values <- unique(c(g, p))
+
+    if (!is.null(levels))
+      if (length(values) != length(levels))
+        warning("Levels do not match values in data")
+    else
+      levels <- values
+
+    g <- factor(g, levels = levels)
+    p <- factor(p, levels = levels)
 
     conf <- as.data.frame.matrix(table(g, p))
     conf2 <- conf[levels, levels]
@@ -43,42 +53,23 @@ bootstrap_mcc <- function(data, R = 1000, ground = "ground",
 
 }
 
-
-# bootstrap_mcc(results2$data[[1]])
+# Setup ====
 
 setwd("~/Google Drive/My Drive/Projects/hemisphere_fingerprinting/code/modeling")
 
-files_base <- list.files("results/base/", pattern = "*.csv", full.names = TRUE)
+# Find data ====
 
-files_trans <- list.files("results/trans/", pattern = "*.csv",
-                          full.names = TRUE)
+all_files1 <- list.files("results/", pattern = ".*_data-.*.csv",
+                         full.names = TRUE, recursive = TRUE)
 
-files_osampl <- list.files("results/osampl/", pattern = "*.csv",
-                          full.names = TRUE)
-
-files_langtask <- list.files("results/langtask/", pattern = "*.csv",
-                             full.names = TRUE)
-
-files_full <- list.files("results/full/", pattern = "*.csv", full.names = TRUE)
-
-all_files1 <- c(files_base, files_trans, files_osampl, files_langtask,
-                files_full)
-
-# files_nets <- list.files("results/networks/", pattern = "*.csv",
-                         # full.names = TRUE)
-
+# Read data in from files
 results <- tibble(f = all_files1) %>%
   mutate(
     data = map(f, read_csv, show_col_types = FALSE,
-               name_repair = "unique_quiet", .progress = TRUE),
+               name_repair = "unique_quiet",
+               .progress = TRUE),
     f = basename(f) %>%
       str_remove(".csv")
-  )
-
-results %>%
-  filter(
-    str_detect(f, "data-base"),
-    str_detect(f, "hands-all")
   )
 
 results_big <- results %>%
@@ -89,25 +80,26 @@ results_big <- results %>%
     method = str_extract(f, "method-[^_]*"),
     outcome = str_extract(f, "outcome-[^_]*"),
     group = str_extract(f, "test-[^_]*"),
-    input = str_extract(f, "data-.*"),
+    input = str_extract(f, "data-[^_]*"),
+
+    subset = str_extract(f, "subset-[^_]*"),
 
     hands = replace_na(str_extract(f, "hands-[^_]*"), "all"),
     hemis = replace_na(str_extract(f, "hemi-[^_]*"), "all"),
 
-    across(c(outcome, method, group, hands, hemis, input),
+    across(c(outcome, method, group, hands, hemis, input, subset),
            ~str_remove(.x, "^.*-"))
 
   ) %>%
   unnest(data) %>%
   mutate(
     ground_hand = str_remove(ground, ".H$"),
-    ground_hemi = str_remove(predicted, "^(left|right)y"),
+    ground_hemi = str_extract(ground, ".H$"),
     pred_hand = str_remove(predicted, ".H$"),
-    pred_hemi = str_remove(predicted, "^(left|right)y"),
-    across(c(starts_with("ground"), starts_with("pred")), as.factor),
+    pred_hemi = str_extract(predicted, ".H$"),
   ) %>%
   select(-`...1`, -f) %>%
-  group_by(outcome, method, group, hands, hemis, input, n)
+  group_by(outcome, method, group, hands, hemis, input, subset, n)
 
 results_big %>%
   filter(
@@ -115,148 +107,28 @@ results_big %>%
   )
 
 results2 <- results_big %>%
-  filter(
-    input %in% c("base", "osampl", "langtask", "full")
-  ) %>%
   nest() %>%
-  select(outcome, method, group, hands, hemis, input, data, n)
-
-results_trans <-  results_big %>%
-  filter(
-    input %in% c("trans")
-  ) %>%
-  nest() %>%
-  select(outcome, method, group, hands, hemis, input, data, n)
-
-## Results by outcome ====
-
-### Predicting handedness from hemisphere connectivity ====
-
-results_hands <- results2 %>%
-  filter(
-    hands == "all",
-    outcome %in% c("hand", "hand2")
-  ) %>%
   mutate(
-
-    accuracy = map_dbl(data, ~sum(.x$ground_hand == .x$pred_hand) / nrow(.x)),
-
-    # Specify only evaluating handedness
-    # WARNING: DON'T KILL THIS
-    mcc = map(data, bootstrap_mcc, R = 100,
-              ground = "ground_hand", predicted = "pred_hand",
-              .progress = TRUE)
-
+    input = if_else(!is.na(subset), paste0(input, subset), input)
   ) %>%
-  unnest(mcc)
-
-results_hands %>%
   filter(
-    input == "base"
-  ) %>%
-  pull(mcc_mean) %>%
-  range()
-
-results_hands %>%
-  filter(
-    input == "osampl"
-  ) %>%
-  pull(mcc_mean) %>%
-  range()
-
-results_hands %>%
-  filter(
-    input == "langtask"
-  ) %>%
-  pull(mcc_mean) %>%
-  range()
-
-results_hands %>%
-  filter(
-    input == "full"
-  ) %>%
-  pull(mcc_mean) %>%
-  range()
-
-results_hands %>%
-  filter(
-    method == "lda",
-    hands == "all",
-    input == "base",
-    hemis == "all"
+    input != "base24"
   )
 
-summary_hands <- results_hands %>%
-  filter(
-    outcome %in% c("hand", "hand2")
-  ) %>%
-  group_by(method, outcome, hands, input, hemis) %>%
-  summarize(
-    n2 = n(),
-    mcc_hands_mean = weighted.mean(mcc_mean, n),
-    mcc_hands_sd = sqrt(Hmisc::wtd.var(mcc_mean, n))
-  ) %>%
-  mutate(
-    mcc_hands_se = mcc_hands_sd / sqrt(n2)
-  )
+# Results by outcome ====
 
-mcc_quick_model <- results_hands %>%
-  ungroup() %>%
-  filter(
-    hemis == "all"
-  ) %>%
-  select(-hemis, -data) %>%
-  fastDummies::dummy_cols(c("method", "group"))
-
-mcc_lm <- aov(mcc_mean ~ method + group,  data = mcc_quick_model)
-
-TukeyHSD(mcc_lm)
-
-png("plots/predict-hand_only.png", width = 5.5, height = 4, units = "in",
-    res = 300)
-
-ggplot(results_hands, aes(x = interaction(input, method))) +
-  geom_pointrange(aes(y = mcc_mean, ymin = mcc_ci_lo, ymax = mcc_ci_hi,
-                      group = group),
-                  position = position_dodge(width = 0.5),
-                  size = 0.25, alpha = 0.25) +
-  geom_pointrange(data = summary_hands,
-                  aes(x = interaction(input, method), y = mcc_hands_mean,
-                      ymin = mcc_hands_mean - mcc_hands_se,
-                      ymax = mcc_hands_mean + mcc_hands_se,
-                      shape = input, linetype = input,
-                      color = input),
-                  size = 0.5) +
-  geom_hline(yintercept = 0, color = "red") +
-  scale_y_continuous(limits = c(NA, NA)) +
-  facet_grid(cols = vars(hemis), rows = vars(outcome), scales = "free_x") +
-  theme_bw() +
-  labs(x = "Method", y = "MCC", title = "Predict handedness (only)",
-       color = "Test group") +
-  theme(axis.text.x = element_text(angle = 45, hjust = 1),
-        legend.position = "bottom")
-
-dev.off()
-
-results_hands %>%
-  filter(
-    method == "lda",
-    hemis == "all"
-  ) %>%
-  distinct()
-
-### Predicting hemisphere ====
+## Hemisphere ====
 
 results_hemis <- results2 %>%
   filter(
     hemis == "all",
-    input != "trans",
+    !(input %in% c("trans", "full")),
     outcome == "hemi"
   ) %>%
   mutate(
 
     # Specify only evaluating hemi
-    mcc = map(data, bootstrap_mcc, R = 1000,
+    mcc = map(data, bootstrap_mcc, R = 100,
               ground = "ground_hemi", predicted = "pred_hemi",
               levels = c("LH", "RH"))
 
@@ -267,135 +139,254 @@ summary_hemis <- results_hemis %>%
   group_by(method, hemis, hands, input) %>%
   summarize(
     n2 = n(),
-    mcc_hemis_mean = weighted.mean(mcc, n),
-    mcc_hemis_sd = sqrt(Hmisc::wtd.var(mcc, n))
+    mcc_hemis_mean = weighted.mean(x = mcc_mean, w = n),
+    mcc_hemis_sd = sqrt(Hmisc::wtd.var(mcc_mean, n)),
   ) %>%
   mutate(
     mcc_hemis_se = mcc_hemis_sd / sqrt(n2)
   )
 
-ggplot(results_hemis, aes(x = interaction(input, method))) +
+results_hemis %>%
+  group_by(hands) %>%
+  summarize(
+    min = min(mcc_mean),
+    max = max(mcc_mean)
+  )
+
+### Plot results =====
+
+png("plots/twoway.png", width = 6.5, height = 5, units = "in", res = 300)
+
+ggplot(results_hemis, aes(x = input)) +
   geom_pointrange(aes(y = mcc_mean, ymin = mcc_ci_lo, ymax = mcc_ci_hi,
                       color = group),
                   position = position_dodge(width = 0.5),
                   size = 0.25, alpha = 0.75) +
-  geom_pointrange(data = summary_hemis,
-                  aes(x = interaction(input, method), y = mcc_hemis_mean,
-                      ymin = mcc_hemis_mean - mcc_hemis_se,
-                      ymax = mcc_hemis_mean + mcc_hemis_se,
-                      shape = input, linetype = input),
-                  size = 0.5) +
-  geom_hline(yintercept = 0, color = "red") +
-  scale_y_continuous(limits = c(NA, NA)) +
-  facet_grid(cols = vars(hands)) +
+  geom_point(data = summary_hemis,
+              aes(x = input, y = mcc_hemis_mean)) +
+  scale_x_discrete(limits = c("base", "base92", "osampl", "langtask"),
+                   labels = c("HC", "HC92", "HCO", "LgHC")) +
+  scale_y_continuous(breaks = seq(0, 1, by = 0.2)) +
+  facet_grid(cols = vars(hands), rows = vars(method)) +
   theme_bw() +
-  labs(x = "Method", y = "MCC", title = "Predict two-way hemisphere (only)") +
-  theme(axis.text.x = element_text(angle = 45, hjust = 1),
-        legend.position = "bottom")
+  labs(x = "Method", y = "MCC", title = "Predict two-way hemisphere (only)",
+       shape = "Input", linetype = "Input",
+       color = "Test group") +
+  theme(legend.position = "bottom",
+        axis.text.x = element_text(angle = 45, hjust = 1))
 
-## Predicting four-way handedness from hemisphere connectivity
+dev.off()
 
-zero_rows <- function(confusion, rows) {
+hemis_aov <- aov(mcc_mean ~ hands + method + input + group,
+                 data = filter(results_hemis, !str_detect(input, "92")))
 
-  x <- confusion
-  x[rows, ] <- 0
+TukeyHSD(hemis_aov, c("hands", "method", "input"))
 
-  return(x)
+subset_check <- results_hemis %>%
+  mutate(
+    input2 = str_remove(input, "92"),
+    subset = replace_na(subset, "none")
+  ) %>%
+  ungroup() %>%
+  select(-data, -starts_with("mcc_ci"), -n) %>%
+  select(method, group, hands, input, mcc_mean) %>%
+  filter(
+    hands != "all",
+    input %in% c("base", "base92")
+  ) %>%
+  pivot_wider(names_from = c(hands, input), values_from = mcc_mean)
 
-}
+d00 <- t.test(subset_check$righty_base, subset_check$righty_base92, paired = TRUE)
+d30 <- t.test(subset_check$righty2_base, subset_check$righty2_base92, paired = TRUE)
 
-four_levels <- c("leftyLH", "leftyRH", "rightyLH", "rightyRH")
+sin00 <- t.test(subset_check$lefty_base, subset_check$righty_base92, paired = TRUE)
+sin30 <- t.test(subset_check$nonrighty_base, subset_check$righty2_base92, paired = TRUE)
 
-# This is the model trained on all at once
-results_hemis4way <- results2 %>%
+t_tests <- tibble(test = list(d00, d30, sin00, sin30)) %>%
+  mutate(
+    effect = map_dbl(test, ~ .x$estimate[2] - .x$estimate[1]),
+    dof = map_dbl(test, ~.x$parameter),
+    t = map_dbl(test, ~round(.x$statistic, 2)),
+    p = map_dbl(test, ~.x$p.value, 3)
+  )
+
+t_tests$p.adj <- p.adjust(t_tests$p, method = "fdr")
+
+# subset_aov <- results_hemis %>%
+#   mutate(
+#     input2 = str_remove(input, "200"),
+#     subset = replace_na(subset, "none")
+#   ) %>%
+#   filter(
+#     !(hands %in% c("lefty", "nonrighty"))
+#   ) %>%
+#   aov(mcc_mean ~ subset + hands + method + input + group, data = .)
+#
+# TukeyHSD(subset_aov, c("hands", "method", "subset"))
+
+## Predicting four-way handedness ====
+
+results_hands1 <- results2 %>%
   filter(
     hemis == "all",
-    hands == "all",
-    input != "trans"
+    outcome == "hand"
   ) %>%
   mutate(
 
-    lefties = map(data, ~filter(.x, ground_hand == "lefty")),
-    righties = map(data, ~filter(.x, ground_hand == "righty")),
-
-    all = map(data, bootstrap_mcc, R = 1000, levels = four_levels),
-
-    lefties = map(lefties, bootstrap_mcc, R = 1000, levels = four_levels),
-    righties = map(righties, bootstrap_mcc, R = 1000, levels = four_levels),
+    # Specify only evaluating hemi
+    mcc = map(data, bootstrap_mcc, R = 100,
+              ground = "ground_hand", predicted = "pred_hand",
+              levels = c("lefty", "righty"),
+              .progress = TRUE)
 
   ) %>%
-  unnest(c(all, lefties, righties), names_sep = "_")
+  unnest(mcc)
 
-results_hemis4way2 <- results_hemis4way %>%
-  ungroup() %>%
-  select(method, input, group, n, contains("mcc")) %>%
-  pivot_longer(-c(method, input, group, n)) %>%
-  separate_wider_delim(name, delim = "_", names = c("hgroup", "name"),
-                       too_many = "merge") %>%
-  pivot_wider()
+results_hands2 <- results2 %>%
+  filter(
+    hemis == "all",
+    outcome == "hand2"
+  ) %>%
+  mutate(
 
-summary_hemis4way <- results_hemis4way2 %>%
-  group_by(method, input, hgroup) %>%
+    # Specify only evaluating hemi
+    mcc = map(data, bootstrap_mcc, R = 100,
+              ground = "ground_hand", predicted = "pred_hand",
+              levels = c("nonrighty", "righty2"),
+              .progress = TRUE)
+
+  ) %>%
+  unnest(mcc)
+
+results_hands <- bind_rows(results_hands1, results_hands2)
+
+summary_hands <- results_hands %>%
+  group_by(method, hemis, hands, input, outcome) %>%
   summarize(
     n2 = n(),
-    mcc_mean = weighted.mean(mcc_mean, n),
-    mcc_sd = sqrt(Hmisc::wtd.var(mcc_mean, n)),
+    mcc_hemis_mean = weighted.mean(x = mcc_mean, w = n),
+    mcc_hemis_sd = sqrt(Hmisc::wtd.var(mcc_mean, n)),
   ) %>%
   mutate(
-    mcc_se = mcc_sd / sqrt(n2)
+    mcc_hemis_se = mcc_hemis_sd / sqrt(n2)
   )
 
-png("plots/predict-4way.png", width = 5.5, height = 4, units = "in",
-    res = 300)
 
-ggplot(results_hemis4way2, aes(x = interaction(input, method))) +
+png("plots/hands.png", width = 6.5, height = 5, units = "in", res = 300)
+
+ggplot(results_hands, aes(x = input)) +
   geom_pointrange(aes(y = mcc_mean, ymin = mcc_ci_lo, ymax = mcc_ci_hi,
                       color = group),
                   position = position_dodge(width = 0.5),
                   size = 0.25, alpha = 0.75) +
-  geom_pointrange(data = summary_hemis4way,
-                  aes(x = interaction(input, method),
-                      y = mcc_mean,
-                      ymin = mcc_mean - mcc_se,
-                      ymax = mcc_mean + mcc_se,
-                      shape = input, linetype = input),
-                  size = 0.5) +
-  geom_hline(yintercept = 0, color = "red") +
-  coord_cartesian(ylim = c(NA, 1)) +
-  facet_wrap(vars(hgroup)) +
+  geom_hline(yintercept = c(0, 0.4), color = "red") +
+  geom_point(data = summary_hands, aes(x = input, y = mcc_hemis_mean)) +
+  scale_x_discrete(limits = c("base", "osampl", "langtask", "trans", "full"),
+                    labels = c("HC", "HCO", "LgHC", "TC", "FC")) +
+  facet_grid(cols = vars(outcome), rows = vars(method), scales = "free_x") +
   theme_bw() +
-  labs(x = "Method", y = "MCC", title = "Predict four-way hemisphere") +
-  theme(axis.text.x = element_text(angle = 45, hjust = 1),
-        legend.position = "bottom")
+  labs(x = "Method", y = "MCC", title = "Predicting handedness",
+       shape = "Input", linetype = "Input",
+       color = "Test group") +
+  theme(legend.position = "bottom",
+        axis.text.x = element_text(angle = 45, hjust = 1))
 
 dev.off()
 
-# Transconnectome ====
+hands_aov <- aov(mcc_mean ~ method + input + group, data = results_hands)
 
-trans_big <- results_trans %>%
-  unnest(data) %>%
-  ungroup() %>%
-  select(-contains("hemi"), -hands, -hemis, -outcome, -input, -ground,
-         -predicted) %>%
-  group_by(method, group) %>%
+TukeyHSD(hands_aov, which = c("input", "group"))
+
+### Four-way handedness ====
+
+results_4way <- results_big %>%
+  filter(
+    outcome %in% c("hand", "hand2"),
+    input %in% c("base", "osampl", "langtask")
+  ) %>%
   nest() %>%
+  select(outcome, method, group, hands, hemis, input, data, n) %>%
   mutate(
 
-    confusion = map(data, ~as.data.frame.matrix(table(.x$ground_hand,
-                                                      .x$pred_hand))),
-
-    mcc = map_dbl(confusion, ~mcc(confusionM = .x))
+    lefty_data = map(data, filter, str_detect(ground, "lefty|nonrighty")),
+    righty_data = map(data, filter, str_detect(ground, "^righty")),
 
   )
 
-png("plots/predict-hand_trans.png", width = 5.5, height = 4, units = "in",
-    res = 300)
+results_4way_hand1 <- results_4way %>%
+  filter(
+    outcome == "hand"
+  ) %>%
+  mutate(
 
-ggplot(trans_big, aes(x = method, y = mcc, color = group)) +
-  geom_point() +
+    all = map(data, ~bootstrap_mcc(.x, R = 100,
+                                   levels = c("leftyLH", "leftyRH",
+                                              "rightyLH", "rightyRH"))),
+
+    lefty = map(lefty_data, ~bootstrap_mcc(.x, R = 100,
+                                     levels = c("leftyLH", "leftyRH",
+                                                "rightyLH", "rightyRH"))),
+
+    righty = map(righty_data, ~bootstrap_mcc(.x, R = 100,
+                                           levels = c("leftyLH", "leftyRH",
+                                                      "rightyLH", "rightyRH"))),
+
+  ) %>%
+  unnest(c(all, lefty, righty), names_sep = "_")
+
+results_4way_hand2 <- results_4way %>%
+  filter(
+    outcome == "hand2"
+  ) %>%
+  mutate(
+
+    all = map(data, ~bootstrap_mcc(.x, R = 100,
+                                   levels = c("nonrightyLH", "nonrightyRH",
+                                              "righty2LH", "righty2RH"))),
+
+    nonrighty = map(lefty_data,
+                ~bootstrap_mcc(.x, R = 100,
+                               levels = c("nonrightyLH", "nonrightyRH",
+                                          "righty2LH", "righty2RH"))),
+
+    righty2 = map(righty_data,
+                 ~bootstrap_mcc(.x, R = 100,
+                                levels = c("nonrightyLH", "nonrightyRH",
+                                           "righty2LH", "righty2RH"))),
+  ) %>%
+  unnest(c(all, nonrighty, righty2), names_sep = "_")
+
+results_4way_2 <- bind_rows(results_4way_hand1, results_4way_hand2) %>%
+  select(outcome, method, group, input, contains("mcc")) %>%
+  pivot_longer(contains("mcc")) %>%
+  separate_wider_delim(name, delim = "_", names = c("hgroup", NA, "name"),
+                       too_many = "merge") %>%
+  pivot_wider(names_from = name, values_from = value) %>%
+  filter(
+    !is.na(mean)
+  )
+
+range(results_4way_2$mean[results_4way_2$hgroup == "all"])
+
+ggplot(results_4way_2, aes(x = input)) +
+  geom_pointrange(aes(y = mean, ymin = ci_lo, ymax = ci_hi,
+                      color = group),
+                  position = position_dodge(width = 0.5),
+                  size = 0.25, alpha = 0.5) +
+  geom_hline(yintercept = 0, color = "red") +
+  scale_x_discrete(limits = c("base", "osampl", "langtask"),
+                     labels = c("HC", "HCO", "LgHC")) +
+  scale_y_continuous(limits = c(NA, NA)) +
+  facet_grid(rows = vars(method), cols = vars(hgroup)) +
   theme_bw() +
-  labs(title = "Predict handedness from trans connections")
+  labs(x = "Method", y = "MCC", color = "Handedness group",
+       title = "Predicting four-way distinction") +
+  theme(legend.position = "bottom") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1),
+        legend.position = "bottom")
 
-dev.off()
 
+fourway_aov <- aov(mean ~ method + input + hgroup + group,
+                   data = results_4way_2)
 
+TukeyHSD(fourway_aov, which = c("input", "hgroup", "group"))

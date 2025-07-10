@@ -4,8 +4,10 @@ import datetime as dt
 import pprint as pp
 import os
 import re
+import numpy as np
 
 from pathlib import Path
+from random import shuffle
 
 import sklearn
 from sklearn import metrics
@@ -29,9 +31,12 @@ parser.add_argument("test_group", choices=["A", "B", "C", "D", "E", "within"],
                     help="Which test group to hold out.")
 
 parser.add_argument("method", choices=["sv", "nn", "lda"],
-                    help="Which test group to hold out.")
+                    help="Which kind of model to run: support vector (sv); "
+                         "neural net (nn), or linear discriminant analysis "
+                         "(lda)")
 
-parser.add_argument("--hands", choices=["lefty", "righty"],
+parser.add_argument("--hands",
+                    choices=["lefty", "righty", "nonrighty", "righty2"],
                     help="Select which handedness group to KEEP.")
 
 parser.add_argument("--hemis", choices=["LH", "RH"],
@@ -44,11 +49,21 @@ parser.add_argument("--output_name",
                     help="Full path to save to.")
 
 parser.add_argument("--bootstrap", "-b", type=int, metavar="N",
-                    help="From the data provided, sample N columns.")
+                    default=0,
+                    help="Shuffle labels and re-run the models N times.")
+
+parser.add_argument("--subset", "-s", type=int, metavar="N",
+                    default=0,
+                    help="Subset N subjects from the training data.")
+
 
 parser.add_argument("--force", action="store_true")
 
+parser.add_argument("--verbose", "-v", action="store_true")
+
 args = parser.parse_args()
+
+# pp.pprint(args)
 
 outcome = args.predict
 input_data = args.data
@@ -57,6 +72,8 @@ method = args.method
 hands = args.hands
 hemis = args.hemis
 bootstrap = args.bootstrap
+verbose = args.verbose
+subset = args.subset
 
 opath = Path(args.output_dir) if args.output_dir is not None else None
 oname = args.output_name
@@ -68,7 +85,6 @@ home = Path("/Users/tkmd/Google Drive/My Drive/Projects/"
 
 hand_suffix = f"_hands-{hands}" if hands is not None else ""
 hemi_suffix = f"_hemi-{hemis}" if hemis is not None else ""
-bs_suffix = f"_bs-{bootstrap}" if bootstrap is not None else ""
 
 # Check output ====
 
@@ -79,8 +95,7 @@ if oname is None:
 
     output_name = opath / \
                 (f"method-{method}_outcome-{outcome}_" + \
-                f"group-{test_group}" + hand_suffix + hemi_suffix + \
-                bs_suffix + ".csv")
+                f"group-{test_group}" + hand_suffix + hemi_suffix + ".csv")
 
 else:
 
@@ -96,17 +111,17 @@ if os.path.exists(output_name) and not args.force:
 with open(input_data, "rb") as f:
     data = pickle.load(f)
 
-print(f"Data loaded from {input_data}")
+print(f" - Data loaded from {input_data}")
 
 # Check outcome =====
 
 if outcome in data.columns:
 
     outcome_type = data.dtypes[outcome]
-    print(f"Requested outcome data type is: {outcome_type}")
+    print(f" -- Requested outcome data type is: {outcome_type}")
 else:
 
-    print(f"Requested outcome '{outcome}' is missing from input data")
+    print(f" -- Requested outcome '{outcome}' is missing from input data")
     raise SystemExit
 
 if outcome_type == "object":
@@ -128,28 +143,34 @@ elif outcome_type == "float64":
         print("Method lda not available for continuous outcome")
         raise SystemExit
 
-print()
-print("Starting modeling run ...")
-print(f"Using method {method}!")
-
 
 # Run model =====
 
+# First, filter by handedness
+
 if hands is not None:
-    if "handedness" in data.columns:
-        data = data[data["handedness"] == hands]
+
+    hand_col = "handedness" if hands in ["lefty", "righty"] else "handedness2"
+
+    if hand_col in data.columns:
+        data = data[data[hand_col] == hands]
     else:
-        print("Filter by handedness was asked for, but no 'handedness' column")
+        print(f"Filter by handedness was asked for, but no '{hand_col}' "
+              "column!")
         raise SystemExit
 
+
+# Then by hemisphere
+
 if hemis is not None:
+
     if "hemi" in data.columns:
         data = data[data["hemi"] == hemis]
     else:
         print("Filter by hemisphere was asked for, but no 'hemi' column")
         raise SystemExit
 
-# Do the modeling
+# Create training groups
 
 if test_group != "within":
 
@@ -161,97 +182,157 @@ else:
     # If we are doing all-to-all, just use both as train and test
     test1 = train1 = data
 
-print()
-print("Train/test info:")
+if subset > 0:
 
-print("  Training data:")
+    subs = train1["sub"].unique()
 
-if outcome_type == "object":
-    print(train1[outcome].value_counts())
+    indices = np.random.choice(len(subs), size=subset, replace=False)
+    subs_to_keep = subs[indices]
 
-labels_to_drop = ["sub", "handedness", "handedness2", "group", "gender", "age",
-                  "age_group", "hemi", "class", "class2", "EHI"]
+    train1 = train1[train1["sub"].isin(subs_to_keep)]
 
-# Create groups
-train_labels = train1[outcome]
-train_data = train1.drop(labels_to_drop, axis = 1, errors = "ignore")
+    print(f"Selected {subset} subs from train1")
 
-exit
+print(" - After filtering steps:")
 
-# Drop duplicates from oversampled data
-test1.drop_duplicates(inplace=True)
+print(" -- Training data")
 
-test_labels = test1[outcome]
-test_data = test1.drop(labels_to_drop, axis = 1, errors = "ignore")
+# print(train1[hand_col].value_counts())
+if hands is not None:
+    print(train1.groupby(by=[hand_col, "hemi"]).size())
 
-label_check1 = [x for x in train_data.columns if not re.fullmatch(".*_.*", x)]
-label_check2 = [x for x in test_data.columns if not re.fullmatch(".*_.*", x)]
+print(" -- Testing data")
+# print(test1[hand_col].value_counts())
+if hands is not None:
+    print(test1.groupby(by=[hand_col, "hemi"]).size())
 
-print("\n  Possible bad columns:")
-pp.pprint([label_check1, label_check2], compact=True)
-
-print("  Test data:")
-
-if outcome_type == "object":
-    print(test_labels.value_counts())
-
-if bootstrap is not None:
-
-    cols_to_keep = sample(train_data.columns.tolist(), bootstrap)
-
-    train_data = train_data[cols_to_keep]
-    test_data = test_data[cols_to_keep]
-
-    print(f"    Reduced train/test data to {bootstrap} columns.")
-
-print(f"  Sets of size train: ({test_group}): "
-      f"{len(train_data)}x{len(train_data.columns)} and test "
-      f"(!{test_group}): {len(test_data)}x{len(test_data.columns)}\n")
-
-#
-# Start running model
-#
+# Do the modeling ====
 
 print()
-print(f"Starting at: {dt.datetime.now()}")
+print(f" - Using method {method}!")
 
-clf.fit(train_data, train_labels)
+labels_to_drop = ["sub", "handedness", "handedness2", "group", "gender",
+                    "age", "age_group", "hemi", "class", "class2", "EHI"]
 
-print(f"Finished at: {dt.datetime.now()}")
-print()
+def model(train1, test1, shuffle_labels=False, verbose=False):
 
-# Write out model
+    if verbose and outcome_type == "object":
 
-output_pickle = str(output_name).replace("csv", "pickle")
-with open(output_pickle, 'wb') as f:
-    pickle.dump(clf, f)
+        print()
+        print("Train/test info:")
 
-# Summary values
+        print("  Training data:")
+        print(train1[outcome].value_counts())
 
-print("Doing prediction ...")
-test_result = clf.predict(test_data)
+    # Create groups
+    train_labels = train1[outcome]
+    train_data = train1.drop(labels_to_drop, axis = 1, errors = "ignore")
 
-if outcome_type == "object":
+    # Shuffle labels for bootstrapping
+    if shuffle_labels:
+        print(" -- Shuffling labels")
+        train_labels = train_labels.sample(frac=1)
 
-    # To do: Equivalent for float
+    # Drop duplicates from oversampled data from the test data
+    test1.drop_duplicates(inplace=True)
 
-    acc = clf.score(test_data, test_labels)
-    print(f"Accuracy: {round(acc, 3)}")
+    test_labels = test1[outcome]
+    test_data = test1.drop(labels_to_drop, axis = 1, errors = "ignore")
 
-    c = metrics.confusion_matrix(test_labels, test_result)
-    print(c)
+    # This was some old code to make sure that bad column names weren't being
+    # modeled
 
-    mcc = metrics.matthews_corrcoef(test_labels, test_result)
-    print(f"MCC: {round(mcc, 3)}")
+    # label_check1 = [x for x in train_data.columns
+    #                 if not re.fullmatch(".*_.*", x)]
 
-# Summarize results
+    # label_check2 = [x for x in test_data.columns
+    #                 if not re.fullmatch(".*_.*", x)]
 
-results = pd.DataFrame({"sub": test1["sub"],
-                        "ground": test_labels,
-                        "predicted": test_result})
+    # print("\n  Possible bad columns:")
+    # pp.pprint([label_check1, label_check2], compact=True)
 
-results.to_csv(output_name)
 
-print()
-print(f"Saved results to {output_name}")
-print("Done!")
+    if verbose:
+
+        print("  Test data:")
+
+        if outcome_type == "object":
+            print(test_labels.value_counts())
+
+        print(f"  Sets of size train: ({test_group}): "
+            f"{len(train_data)}x{len(train_data.columns)} and test "
+            f"(!{test_group}): {len(test_data)}x{len(test_data.columns)}\n")
+
+    #
+    # Start running model
+    #
+
+    print()
+    print(f" - Starting at: {dt.datetime.now()}")
+
+    clf.fit(train_data, train_labels)
+
+    print(f" - Finished at: {dt.datetime.now()}")
+    print()
+
+    # Write out model
+
+    output_pickle = str(output_name).replace("csv", "pickle")
+    print()
+    print(f" - Saved results to {output_name}")
+
+    with open(output_pickle, 'wb') as f:
+        pickle.dump(clf, f)
+
+    # Summary values
+
+    print(" - Doing prediction ...")
+    test_result = clf.predict(test_data)
+
+    if outcome_type == "object":
+
+        # To do: Equivalent for float
+
+        acc = clf.score(test_data, test_labels)
+        print(f"Accuracy: {round(acc, 3)}")
+
+        c = metrics.confusion_matrix(test_labels, test_result)
+        print(c)
+
+        mcc = metrics.matthews_corrcoef(test_labels, test_result)
+        print(f"MCC: {round(mcc, 3)}")
+
+    # Summarize results
+
+    results = pd.DataFrame({"sub": test1["sub"],
+                            "ground": test_labels,
+                            "predicted": test_result})
+
+    return(results)
+
+
+
+if bootstrap > 0:
+
+    bs_results_all = list()
+    for i in range(bootstrap):
+
+        print()
+        print(f"-Bootstrapping: {i}/{bootstrap}")
+
+        bs_results = model(train1, test1, shuffle_labels=True)
+        bs_results["repetition"] = i
+
+        bs_results_all.append(bs_results)
+
+    # bs_result_name = str(output_name).replace(".csv", "-bootstrapped.csv")
+    pd.concat(bs_results_all).to_csv(output_name)
+
+elif bootstrap == 0:
+
+    # Run the basic model and save it
+    results1 = model(train1, test1)
+
+    results1.to_csv(output_name)
+
+print(f" - Done at: {dt.datetime.now()}")

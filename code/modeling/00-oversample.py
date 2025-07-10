@@ -7,7 +7,7 @@ from imblearn.over_sampling import RandomOverSampler
 # Load data
 
 home = Path("/Users/tkmd/Google Drive/My Drive/Projects/"
-            "hemisphere_fingerprinting/code/modeling")
+            "hemisphere_fingerprinting/code/modeling/inputs/")
 
 with open(home / "hemiconnectome.pickle", "rb") as f:
     data = pickle.load(f)

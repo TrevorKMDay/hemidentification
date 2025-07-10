@@ -142,7 +142,14 @@ groups <- hands %>%
     group = cut_interval(row_number(), n = 5, labels = LETTERS[1:5])
   ) %>%
   ungroup() %>%
-  select(sub, group)
+  select(sub, group, handedness)
+
+groups_summary <- groups %>%
+  group_by(group) %>%
+  summarize(
+    n_righty = sum(handedness == "righty"),
+    n_lefty = sum(handedness == "lefty")
+  )
 
 # Hemi/trans connectome ====
 
