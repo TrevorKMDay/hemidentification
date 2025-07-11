@@ -27,6 +27,9 @@ scalings <- tibble(f = scaling_files) %>%
   ) %>%
   select(f)
 
+scalings <- read_csv("modeling/lda_full/full_scalings.csv",
+                     show_col_types = FALSE)
+
 scalings_avg_pctile <- scalings %>%
   select(feature, group, ends_with("pctile")) %>%
   pivot_longer(-c(feature, group)) %>%

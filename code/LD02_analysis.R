@@ -36,6 +36,18 @@ xform1 <- xform0 %>%
     ground = class
   )
 
+xform1 <- read_csv("modeling/lda_full/lda_class_xform.csv",
+                   show_col_types = FALSE) %>%
+  select(-`...1`) %>%
+  rename(
+    LD1 = `0`,
+    LD2 = `1`,
+    LD3 = `2`,
+    ground = class
+  )
+
+mltools::mcc(confusionM = as.data.frame.matrix(table(xform1$ground, xform1$predicted)))
+
 hand_meas <- read_rds("../data/hand_measurements.rds") %>%
   mutate(
     sub = paste0("sub-", Subject)
