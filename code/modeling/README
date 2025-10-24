@@ -1,0 +1,56 @@
+# Definitions
+
+ - hemiconnectome: All within-hemisphere connections.
+ - transconnectome: Only between-hemisphere connections.
+ - connectome: Regular all-to-all connectome.
+
+# Setup data
+
+These files create `*.pickle` files for modeling, and `*.rds` files for loading
+into R. RDS files use `qs` standard.
+
+ - **00-organize_data.R**: Load data, create train/test groups, write out
+    input files.
+
+ - **00-oversample.py**: Take the hemiconnectome files from
+    `00-organize_data.R` and oversample the lefty group and save that out.
+
+## Resulting files:
+
+All of these files contain FisherZ-transformed *r* values as the features:
+
+ - `hemiconnectome.*`: All ipsilateral connections, two rows (LH/RH) per
+    participant. Calculated from RS data.
+
+ - `hemiconnectome_language.*`: All ipsilateral connections, two rows (LH/RH)
+    per participant. Calculated from language task data.
+
+ - `transconnectome.*` and `transconnectome_language.*`: All between-hemisphere
+    connections, one row per particpant. Calculated on RS and language data,
+    respectively.
+
+ - `connectome.*`: Full connectome, de-duped. One row per participant,
+    calculated on RS data.
+
+ - `hemiconnectome_oversampled`: Results from running `00-oversample.py`. Due
+    to the lack of success of oversampling, so far I have not oversampled
+    the full connectome, transconnectome, or language *tomes.
+
+# Running models
+
+Everything relies on `run_model.py`, which takes a `pickle` file, a column to
+predict, and which type of model to use `{sv,nn,lda}.`
+
+It picks the correct classifier based on the outcome type (discrete or
+continuous). It further reduces the input data based on `--hands lefty` and
+hemispheres, `--hemis LH`.
+
+For example, to run an SVC on lefties only, you might run the following code
+to train on groups B-E and test on E:
+
+    python run_model.py \
+        --hands lefty   \
+        class hemiconnectome.pickle A sv
+
+`run_models.py` outputs a CSV with the resulting label for each input, and also
+a copy of the model for later use.
