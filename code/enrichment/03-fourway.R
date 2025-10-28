@@ -183,6 +183,18 @@ results <- bind_rows(g1_results, g2_results, g3_results, .id = "LD") %>%
   filter(
     !(net1 %in% c("OAN", "pMN", "vMN")),
     !(net2 %in% c("OAN", "pMN", "vMN"))
+  ) %>%
+  group_by(LD) %>%
+  mutate(
+
+    pvalue = replace(pvalue, pvalue == 0, .0003),
+    p_fdr = p.adjust(pvalue, "fdr")
+
+  )
+
+results %>%
+  filter(
+    pvalue < .05
   )
 
 ggplot(results, aes(x = net1, y = net2, fill = prop)) +
@@ -196,6 +208,8 @@ ggplot(results, aes(x = net1, y = net2, fill = prop)) +
   theme(axis.text.x = element_text(angle = 45, hjust = 1),
         legend.position = "bottom") +
   labs(x = NULL, y = NULL)
+
+ggsave("fourway_LD_enrichment.png", width = 6.5, height = 4)
 
 # AudN-LN ====
 

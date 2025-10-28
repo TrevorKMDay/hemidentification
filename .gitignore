@@ -1,5 +1,6 @@
 data/**
 irb/
+docs/
 
 .R*
 
@@ -17,3 +18,8 @@ connectome/
 
 code/modeling/results/
 code/modeling/subsets/
+
+# Files with data
+**/*.csv
+**/*.rds
+**/*.zip

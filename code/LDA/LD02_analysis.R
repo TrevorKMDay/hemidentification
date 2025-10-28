@@ -210,7 +210,11 @@ ld1_ld2_plot <- ggplot(mapping = aes(x = LD1, y = LD2)) +
   scale_color_manual(values = c("black","pink3", "grey50", "black")) +
   scale_fill_manual(values = c(lefty_color, lefty_color, "grey50", "grey50")) +
   scale_x_continuous(breaks = c(-5, 0, 5),
-                     labels = c("-5 (LH)", "0", "5 (RH)")) +
+                     labels = c("-5 (LH)", "0", "5 (RH)"),
+                     sec.axis = dup_axis(breaks = c(-5, 5),
+                                         labels = c(expression(Z(LD1)[LH]*" = 0"),
+                                                    expression(Z(LD1)[RH]*" = 0")),
+                                         name = NULL)) +
   theme_bw() +
   labs(x = "LD1 (95%)", y = "LD2 (3%)",
        color = "Handedness-1", fill = "Handedness-1", shape = "Handedness-1",
@@ -237,8 +241,7 @@ ld1_ld2_plot <- ggplot(mapping = aes(x = LD1, y = LD2)) +
            x = xform_summary2$mean_LD1 - xform_summary2$se_LD1,
            xend = xform_summary2$mean_LD1 + xform_summary2$se_LD1)
 
-ggsave(ld1_ld2_plot, filename = "plots/ld1_ld2_size-manuscript.png",
-       width = 6, height = 4, units = "in")
+ggsave("plots/ld1_ld2_size-manuscript.png", width = 6, height = 4, units = "in")
 
 ld1_ld2_plot_poster <- ggplot(xform, mapping = aes(x = LD1, y = LD2)) +
   geom_point(aes(color = handedness, alpha = handedness),

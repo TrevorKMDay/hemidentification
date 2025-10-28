@@ -244,14 +244,26 @@ bootstrapped <- bootstrap_pmatrix(pepper, nets_ordered)
 
 bootstrapped1 <- remove_tri(bootstrapped) %>%
   mutate(
+
     sig = replace(sig, sig == 0, NA),
     prop = replace(prop, prop == 0, NA),
+
     sig_label = case_when(
       pvalue < .001 ~ "***",
       pvalue < .01 ~ "**",
       pvalue < .05 ~ "*",
       TRUE ~ ""
     ),
+
+    pvalue = replace(pvalue, pvalue == 0, 0.0003)
+
+  )
+
+bootstrapped1$p_fdr <- p.adjust(bootstrapped1$pvalue, method = "fdr")
+
+bootstrapped1 %>%
+  filter(
+    pvalue < .05
   )
 
 net_plot <- ggplot(bootstrapped1, aes(x = net1, y = net2, fill = prop)) +
@@ -327,14 +339,26 @@ sens2_bs <- bootstrap_pmatrix(sens2, nets = nets_ordered) %>%
 
 sens2_bs1 <- sens2_bs %>%
   mutate(
+
     sig = replace(sig, sig == 0, NA),
     prop = replace(prop, prop == 0, NA),
+
     sig_label = case_when(
       pvalue < .001 ~ "***",
       pvalue < .01 ~ "**",
       pvalue < .05 ~ "*",
       TRUE ~ ""
     ),
+
+    pvalue = replace(pvalue, pvalue == 0 , .0003)
+
+  )
+
+sens2_bs1$p_fdr <- p.adjust(sens2_bs1$pvalue, method = "fdr")
+
+sens2_bs1 %>%
+  filter(
+    pvalue < .05
   )
 
 ggplot(sens2_bs1, aes(x = net1, y = net2, fill = prop)) +
