@@ -1,19 +1,37 @@
 library(tidyverse)
 
-setwd("~/Projects/glasser/mmp1.0_mniprojections/")
-
-# andrew <- read_tsv("~/Projects/glasser/mmp1.0_mniprojections/example_node_file.node",
-#                    col_names = FALSE, show_col_types = FALSE)
-#
-# range(andrew$X1)
-# range(andrew$X2)
-# range(andrew$X3)
+setwd("~/MyDrive/Projects/hemisphere_fingerprinting/code/enrichment")
 
 networks0 <- read_csv(file = paste0("~/MyDrive/Projects/",
                                     "hemisphere_fingerprinting/data/",
                                     "ColeAnticevicNetPartition/",
                                     "all_parcels_to_networks.csv"),
                       show_col_types = FALSE)
+
+colors0 <- tribble(
+    ~L, ~hex,
+    "Auditory", "#F98BFC",
+    "CinguloOpercular", "#C350BF",
+    "Default", "#FF4E31",
+    "DorsalAttention", "#1EEE3A",
+    "Frontoparietal", "#FDF66D",
+    "Language", "#05A0A1",
+    # 7f7f7f
+    "OrbitoAffective", "grey50",
+    "Somatomotor", "#62FAFD",
+    "Visual2", "#425BFB",
+  )
+
+colors <- colors0 %>%
+  mutate(
+    # Convert hex to RGB, BNV expects [0, 1], not [0, 255], round for
+    # readability
+    rgb = map(hex, ~as_tibble(round(t(col2rgb(.x) / 255), 3))),
+  ) %>%
+  unnest(rgb) %>%
+  select(-hex)
+
+write_tsv(select(colors, -L), "colors.txt", col_names = FALSE)
 
 ## Nodes ====
 
@@ -22,9 +40,10 @@ networks0 <- read_csv(file = paste0("~/MyDrive/Projects/",
 # https://neuroimaging-core-docs.readthedocs.io/en/latest/pages/atlases.html
 # https://www.lead-dbs.org/helpsupport/knowledge-base/atlasesresources/cortical-atlas-parcellations-mni-space/
 
-cogs1 <- read_table("~/Projects/glasser/mmp1.0_mniprojections/MMP_in_MNI_corr/coords.txt",
-                   col_names = c("index", "X", "Y", "Z"),
-                   show_col_types = FALSE) %>%
+cogs1 <- read_table(paste0("~/Projects/glasser/mmp1.0_mniprojections/",
+                            "MMP_in_MNI_corr/coords.txt"),
+                    col_names = c("index", "X", "Y", "Z"),
+                    show_col_types = FALSE) %>%
   bind_cols(networks0) %>%
   select(-c(index, L, R))
 
@@ -54,17 +73,21 @@ write_tsv(all_nodes, "glasser_all.node", col_names = FALSE)
 nodes_to_keep <- read_tsv("enrichment_nodes_to_keep.tsv",
                           show_col_types = FALSE)
 
-my_nodes <- all_nodes %>%
-  filter(
-    label2 %in% nodes_to_keep$node
-  ) %>%
+# Filter all nodes down by right joining to the the list of nodes to keep,
+my_nodes <- left_join(nodes_to_keep, all_nodes,
+                      by = join_by(node == label2)) %>%
   left_join(
-    select(networks0, label2, L)
+    select(networks0, label2, L),
+    by = join_by(node == label2)
   ) %>%
   group_by(L) %>%
   mutate(
-    color = cur_group_id()
-  )
+    # Create individual colors for each network
+    color = cur_group_id(),
+    # Replace `size` column with `degree` values
+    size = degree
+  ) %>%
+  select(X, Y, Z, color, size, node, L)
 
 networks <- my_nodes %>%
   select(L, color) %>%
@@ -73,7 +96,10 @@ networks <- my_nodes %>%
 
 my_nodes_final <- my_nodes %>%
   ungroup() %>%
-  select(-L)
+  select(-L) %>%
+  mutate(
+    across(c(X, Y, Z), ~round(.x, 2))
+  )
 
 write_tsv(my_nodes_final, "enrichment_result.node", col_names = FALSE)
 

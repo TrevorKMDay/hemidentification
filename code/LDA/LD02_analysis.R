@@ -5,7 +5,7 @@ library(igraph)
 
 select <- dplyr::select
 
-setwd("~/MyDrive/Projects/hemisphere_fingerprinting/code/")
+setwd("~/MyDrive/Projects/hemisphere_fingerprinting/code/LDA")
 
 # Load data ====
 

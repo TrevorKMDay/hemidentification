@@ -186,7 +186,8 @@ connection_strengths <- hc %>%
   summarize(
     mean_RH = mean(RH),
     mean_LH = mean(LH),
-    mean_diff = mean(LH - RH)
+    mean_diff_LHgtRH = mean(LH - RH),
+    mean_pct = mean(LH / RH)
   ) %>%
   separate_wider_delim(name, delim = "_", names = c("ROI1", "ROI2"))
 
@@ -199,7 +200,7 @@ important_connections <- pepper %>%
   select(-contains("order")) %>%
   left_join(connection_strengths) %>%
   filter(
-    !is.na(mean_diff)
+    !is.na(mean_diff_LHgtRH)
   ) %>%
   mutate(
     conn = paste(ROI1, ROI2, sep = "_")
@@ -207,13 +208,12 @@ important_connections <- pepper %>%
   left_join(sa_rank, by = join_by(ROI1 == region)) %>%
   left_join(sa_rank, by = join_by(ROI2 == region), suffix = c("1", "2"))
 
-ggplot(important_connections, aes(x = final.rank1, y = mean_diff)) +
+ggplot(important_connections, aes(x = final.rank1, y = mean_diff_LHgtRH)) +
   geom_point() +
   scale_x_continuous(breaks = important_connections$final.rank1,
                      labels = important_connections$ROI1) +
   theme_bw() +
   theme(axis.text.x = element_text(angle = 45, hjust = 1))
-
 
 important_connections2 <- important_connections %>%
   filter(
@@ -224,11 +224,38 @@ important_connections2 <- important_connections %>%
 table(c(important_connections2$ROI1, important_connections2$ROI2)) %>%
   sort()
 
-ggplot(important_connections2, aes(x = conn, y = mean_diff)) +
+ggplot(important_connections2, aes(y = conn, x = mean_diff_LHgtRH)) +
   geom_point() +
-  geom_hline(yintercept = 0, color = "red") +
+  geom_vline(xintercept = 0, color = "red") +
   facet_grid(rows = vars(network1), cols = vars(network2),
-             scales = "free_x") +
+             scales = "free_y") +
+  theme_bw()
+
+ggplot(important_connections2, aes(y = conn, x = mean_pct)) +
+  geom_point() +
+  geom_vline(xintercept = 0, color = "red") +
+  facet_grid(rows = vars(network1), cols = vars(network2),
+             scales = "free_y") +
+  theme_bw()
+
+ggplot(important_connections2, aes(y = conn)) +
+  geom_point(aes(x = mean_LH), color = "blue") +
+  geom_point(aes(x = mean_RH), color = "red") +
+  geom_vline(xintercept = 0, color = "red") +
+  facet_grid(rows = vars(network1), cols = vars(network2),
+             scales = "free_y") +
+  theme_bw()
+
+all_rois <- unique(c(important_connections2$ROI1,
+                     important_connections2$ROI2))
+
+ggplot(important_connections2, aes(x = ROI1, y = ROI2,
+                                   color = mean_diff_LHgtRH)) +
+  geom_point() +
+  scale_color_gradient2() +
+  scale_y_discrete(limits = rev) +
+  facet_grid(rows = vars(network1), cols = vars(network2),
+             scales = "free") +
   theme_bw() +
   theme(axis.text.x = element_text(angle = 45, hjust = 1))
 
@@ -236,28 +263,34 @@ ggplot(important_connections2, aes(x = conn, y = mean_diff)) +
 
 ## Edges ====
 
-bnv1 <- g_input %>%
+g_input_pLT001 <- g_input %>%
   filter(
     p < .001
-  ) %>%
+  )
+
+bnv1 <- g_input_pLT001 %>%
   select(-p) %>%
   graph_from_data_frame(directed = FALSE)
 
-E(bnv1)$weights <- g_input %>%
-  filter(
-    p < .001
-  ) %>%
-  pull(LD1)
+# Add weights
+E(bnv1)$weights <- g_input_pLT001$LD1
 
 bnv2 <- as_adjacency_matrix(bnv1, attr = "weights", type = "both",
-                            sparse = FALSE)
+                            sparse = FALSE) %>%
+  round(3)
 
-edge_names <- tibble(node = names(V(bnv1)))
-write_tsv(edge_names, "enrichment_nodes_to_keep.tsv")
+nodes <- tibble(
+    node = names(V(bnv1)),
+    degree = unname(degree(bnv1))
+  )
 
-write_tsv(as_tibble(bnv2), "enrichment.edge", col_names = FALSE)
+# edge_names <- tibble(node = names(V(bnv1)))
+write_tsv(nodes, "enrichment_nodes_to_keep.tsv")
 
+write_tsv(as_tibble(bnv2), "enrichment_result.edge", col_names = FALSE)
 
+write_tsv(as_tibble(abs(bnv2)), "enrichment_abs_result.edge",
+          col_names = FALSE)
 
 # Bootstrap models ====
 

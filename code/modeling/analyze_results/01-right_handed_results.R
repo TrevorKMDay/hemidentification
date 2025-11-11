@@ -159,13 +159,24 @@ t.test(righty_LDA_wide$diff[righty_LDA_wide$gender == "F"],
 ggplot(righty_LDA_wide, aes(x = LH, y = RH)) +
   geom_point()
 
+# Reverse colors so L=blue and R=red, following typical convention
+lhrh_colors <- c("#00BFC4", "#F8766D")
+
 righty_LDA_plot <- ggplot(righty_LDA, aes(x = LD1, y = sub, color = hemi)) +
   geom_point(alpha = 0.5) +
+  scale_x_continuous(breaks = c(-5, 0, 5),
+                     labels = c("-5\n(LH)", "0", "5\n(RH)")) +
   scale_y_discrete(labels = NULL, breaks = NULL,
                    expand = expansion(mult = 0.05)) +
+  scale_color_manual(values = lhrh_colors) +
   theme_bw() +
   labs(y = "Participant", color = "Hemisphere") +
-  theme(legend.position = "bottom")
+  theme(legend.position = "right")
+
+ggsave(righty_LDA_plot, filename = "plots/righty_LD1_plot.png",
+       width = 6, height = 3,
+       units = "in")
+
 
 snl_plot <- righty_LDA_plot +
   theme(text = element_text(size = 24))
