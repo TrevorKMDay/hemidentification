@@ -232,6 +232,37 @@ ggplot(important_connections2, aes(x = conn, y = mean_diff)) +
   theme_bw() +
   theme(axis.text.x = element_text(angle = 45, hjust = 1))
 
+# Edges ====
+
+g_input_pLT001 <- g_input %>%
+  filter(
+    p < .001
+  )
+
+bnv1 <- g_input_pLT001 %>%
+  select(-p) %>%
+  graph_from_data_frame(directed = FALSE)
+
+# Add weights
+E(bnv1)$weights <- g_input_pLT001$LD1
+
+bnv2 <- as_adjacency_matrix(bnv1, attr = "weights", type = "both",
+                            sparse = FALSE) %>%
+  round(3)
+
+nodes <- tibble(
+    node = names(V(bnv1)),
+    degree = unname(degree(bnv1))
+  )
+
+# edge_names <- tibble(node = names(V(bnv1)))
+write_tsv(nodes, "enrichment_nodes_to_keep_lefties.tsv")
+
+write_tsv(as_tibble(bnv2), "enrichment_result_lefties.edge", col_names = FALSE)
+
+write_tsv(as_tibble(abs(bnv2)), "enrichment_abs_result_lefties.edge",
+          col_names = FALSE)
+
 # Bootstrap models ====
 
 true_nets <- summarize_tibble_by_net(pepper, nets_ordered) %>%

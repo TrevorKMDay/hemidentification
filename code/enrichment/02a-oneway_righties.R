@@ -439,3 +439,29 @@ ggplot(sens2_bs1, aes(x = net1, y = net2, fill = prop)) +
   theme_bw() +
   theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
   labs(title = "Sensitivity: Mismatched ROIs removed")
+
+# Compare edge to diff ====
+
+important_connections3 <- important_connections %>%
+  left_join(g_input) %>%
+  mutate(
+    LD1_pos = LD1 > 0
+  )
+
+ggplot(important_connections3, aes(x = LD1, y = mean_diff_LHgtRH,
+                                   color = LD1_pos)) +
+  geom_hline(yintercept = 0, color = "red") +
+  geom_vline(xintercept = 0, color = "red", linetype = "dotted") +
+  geom_point(alpha = 0.5) +
+  geom_smooth(method = "lm") +
+  scale_y_continuous(limits = c(-0.5, 0.5),
+                     sec.axis = sec_axis(transform = ~.,
+                                         breaks = c(-0.5, 0, 0.5),
+                                         labels = c("LH < RH", "LH = RH",
+                                                    "LH > RH"))) +
+  theme_bw() +
+  labs(y = "LH - RH") +
+  theme(legend.position = "none")
+
+dir.create("plots/", showWarnings = FALSE)
+ggsave("plots/LD1_v_diff.png", width = 5, height = 3)

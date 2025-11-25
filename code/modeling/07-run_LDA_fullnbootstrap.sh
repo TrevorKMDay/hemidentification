@@ -7,6 +7,9 @@ data=inputs/hemiconnectome.pickle
 
 # One-class model (hemispheres) ===============================================
 
+# This runs the hemisphere classification model on all righties, and the
+#   associated bootstrap
+
 # python run_model.py                         \
 #     --output_name   "lda_full/full.csv"     \
 #     --hands         righty                  \
@@ -29,27 +32,30 @@ data=inputs/hemiconnectome.pickle
 
 # One-class model (lefties) ===============================================
 
-python run_model.py                                 \
-    --output_name   "lda_full/full_lefties.csv"     \
-    --hands         lefty                           \
-    ${outcome} ${data} within lda
+# This runs the hemisphere classification model on all lefties, and the
+#   associated bootstrap
 
-python dump_scalings.py \
-    "lda_full/full_lefties.pickle" "lda_full/full_lefties_scalings.csv"
+# python run_model.py                                 \
+#     --output_name   "lda_full/full_lefties.csv"     \
+#     --hands         lefty                           \
+#     ${outcome} ${data} within lda
 
-for i in $(seq -w 0 999) ; do
+# python dump_scalings.py \
+#     "lda_full/full_lefties.pickle" "lda_full/full_lefties_scalings.csv"
 
-    python run_model.py                                         \
-        --output_name   "lda_full/full_lefties_bs${i}.csv"      \
-        --bootstrap     1                                       \
-        --hands         righty                                  \
-        ${outcome} ${data} within lda
+# for i in $(seq -w 0 999) ; do
 
-    python dump_scalings.py \
-        "lda_full/full_lefties_bs${i}.pickle" \
-        "lda_full/full_lefties_bs${i}_scalings.csv"
+#     python run_model.py                                         \
+#         --output_name   "lda_full/full_lefties_bs${i}.csv"      \
+#         --bootstrap     1                                       \
+#         --hands         righty                                  \
+#         ${outcome} ${data} within lda
 
-done
+#     python dump_scalings.py \
+#         "lda_full/full_lefties_bs${i}.pickle" \
+#         "lda_full/full_lefties_bs${i}_scalings.csv"
+
+# done
 
 # Four-class model ===============================================
 
@@ -57,9 +63,9 @@ done
 #     --output_name   "lda_full/full_class.csv"       \
 #     class ${data} within lda
 
-python dump_scalings.py \
-    "lda_full/full_class.pickle" \
-    "lda_full/full_class_scalings.csv"
+# python dump_scalings.py \
+#     "lda_full/full_class.pickle" \
+#     "lda_full/full_class_scalings.csv"
 
 # for i in $(seq -w 0 9999) ; do
 
@@ -75,3 +81,23 @@ python dump_scalings.py \
 #         "lda_full/full_class_bs${i}_scalings.csv"
 
 # done
+
+# Four-class model (run 1) ==========
+
+python run_model.py                                      \
+    --output_name   "lda_full/full_class_run1.csv"       \
+    class inputs/half_hemiconnectome.pickle within lda
+
+python dump_scalings.py \
+    "lda_full/full_class_run1.pickle" \
+    "lda_full/full_class_run1_scalings.csv"
+
+# Four-class model (Z-scored) ==========
+
+python run_model.py                                     \
+    --output_name   "lda_full/full_class_zscored.csv"   \
+    class inputs/hemiconnectome_Z.pickle within lda
+
+python dump_scalings.py \
+    "lda_full/full_class_zscored.pickle" \
+    "lda_full/full_class_zscored_scalings.csv"

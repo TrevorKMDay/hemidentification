@@ -70,6 +70,8 @@ all_nodes <- cogs1 %>%
 
 write_tsv(all_nodes, "glasser_all.node", col_names = FALSE)
 
+# Righties ====
+
 nodes_to_keep <- read_tsv("enrichment_nodes_to_keep.tsv",
                           show_col_types = FALSE)
 
@@ -102,4 +104,58 @@ my_nodes_final <- my_nodes %>%
   )
 
 write_tsv(my_nodes_final, "enrichment_result.node", col_names = FALSE)
+
+# Lefties ====
+
+nodes_to_keep_L <- read_tsv("enrichment_nodes_to_keep_lefties.tsv",
+                          show_col_types = FALSE)
+
+# Filter all nodes down by right joining to the the list of nodes to keep,
+my_nodes_L <- left_join(nodes_to_keep_L, all_nodes,
+                        by = join_by(node == label2)) %>%
+  left_join(
+    select(networks0, label2, L),
+    by = join_by(node == label2)
+  ) %>%
+  group_by(L) %>%
+  mutate(
+    # Create individual colors for each network
+    color = cur_group_id(),
+    # Replace `size` column with `degree` values
+    size = degree
+  ) %>%
+  select(X, Y, Z, color, size, node, L)
+
+networks_L <- my_nodes_L %>%
+  select(L, color) %>%
+  distinct() %>%
+  arrange(color)
+
+my_nodes_final_L <- my_nodes_L %>%
+  ungroup() %>%
+  select(-L) %>%
+  mutate(
+    across(c(X, Y, Z), ~round(.x, 2))
+  )
+
+write_tsv(my_nodes_final_L, "enrichment_result_lefties.node",
+          col_names = FALSE)
+
+# comparison
+
+nodes_to_keep_L$node %in% nodes_to_keep$node
+nodes_to_keep$node %in% nodes_to_keep_L$node
+
+L_notR_nodes <- nodes_to_keep_L$node[!(nodes_to_keep_L$node %in% nodes_to_keep$node)]
+
+networks_LnotR <- my_nodes_L %>%
+  filter(
+    node %in% L_notR_nodes
+  )
+
+networks_LnotR %>%
+  group_by(L) %>%
+  summarize(
+    n = n()
+  )
 

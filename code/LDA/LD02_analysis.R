@@ -9,12 +9,13 @@ setwd("~/MyDrive/Projects/hemisphere_fingerprinting/code/LDA")
 
 # Load data ====
 
-hc <- qs::qread("modeling/inputs/hemiconnectome.rds")
+hc <- qs::qread("../modeling/inputs/hemiconnectome.rds")
 
 table(hc$handedness) / 2
 
-files <- list.files("modeling/results/base", "*_xform.csv", full.names = TRUE)
-p_files <- list.files("modeling/results/base", "*_predicted.csv",
+files <- list.files("../modeling/results/base", "*_xform.csv",
+                    full.names = TRUE)
+p_files <- list.files("../modeling/results/base", "*_predicted.csv",
                      full.names = TRUE)
 
 pred0 <- tibble(f = p_files) %>%
@@ -38,6 +39,8 @@ xform1 <- xform0 %>%
     ground = class
   )
 
+qs::qsave(xform1, "hc_xform_allgroups.rds")
+
 # This produces strong separation in classes, is this from the self train/test
 # sample?
 
@@ -54,7 +57,7 @@ xform1 <- xform0 %>%
 xform1_confusion <- as.data.frame.matrix(table(xform1$ground, xform1$predicted))
 mltools::mcc(confusionM = xform1_confusion)
 
-hand_meas <- read_rds("../data/hand_measurements.rds") %>%
+hand_meas <- read_rds("../../data/hand_measurements.rds") %>%
   mutate(
     sub = paste0("sub-", Subject)
   ) %>%
@@ -197,8 +200,19 @@ xform_summary2 <- xform %>%
 
 lefty_color <- "pink2"
 
-## Main publication plot ====
+## centroid differences
 
+centroid <- xform %>%
+  select(sub, handedness, hemi, LD1) %>%
+  group_by(hemi) %>%
+  nest() %>%
+  mutate(
+    t_test = map(data, ~t.test(LD1 ~ handedness, data = .x)),
+    mean_diff = map_dbl(data, ~mean(.x$LD1[.x$handedness == "lefty"]) -
+                                mean(.x$LD1[.x$handedness == "righty"]))
+  )
+
+## Main publication plot ====
 
 ld1_ld2_plot <- ggplot(mapping = aes(x = LD1, y = LD2)) +
   geom_point(data = xform,
@@ -273,7 +287,6 @@ ggsave(ld1_ld2_plot_poster, filename = "plots/ld1_ld2_size-poster.png",
 
 # Simple plot for research statement ====
 
-
 ## LD2 and LD3 ====
 
 lm(LD2 ~ EHI, data = xform) %>%
@@ -289,6 +302,25 @@ ggplot(xform, aes(x = EHI, y = LD3z, color = hemi)) +
   geom_smooth(method = "lm") +
   theme_bw()
 
+xform_wide <- xform %>%
+  select(sub, handedness, EHI, hemi, LD1z) %>%
+  pivot_wider(names_from = hemi, values_from = LD1z)
+
+ggplot(xform_wide, aes(x = LH, y = RH)) +
+  geom_point(aes(color = EHI)) +
+  geom_smooth(method = "lm") +
+  scale_color_gradient2() +
+  facet_wrap(vars(handedness)) +
+  theme_bw()
+
+xform_cors = xform_wide %>%
+  group_by(handedness) %>%
+  nest() %>%
+  mutate(
+    rcorr = map(data, ~Hmisc::rcorr(.x$LH, .x$RH)),
+    r = map_dbl(rcorr, ~ .$r[1, 2]),
+    p = map_dbl(rcorr, ~ signif(.$P[1, 2], 3)),
+  )
 
 ## Z(LD1) ====
 

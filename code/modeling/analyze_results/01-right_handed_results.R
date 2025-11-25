@@ -2,6 +2,7 @@ library(tidyverse)
 library(mltools)
 library(doParallel)
 library(foreach)
+library(patchwork)
 
 select <- dplyr::select
 
@@ -13,8 +14,8 @@ registerDoParallel(cl)
 
 # Setup ====
 
-setwd(paste0("~/Google Drive/My Drive/Projects/hemisphere_fingerprinting/code/",
-             "modeling/analyze_results/"))
+setwd(paste0("~/MyDrive/Projects/hemisphere_fingerprinting/code/modeling/",
+              "analyze_results/"))
 
 source("bootstrap_mcc.R")
 
@@ -24,7 +25,8 @@ all_files1 <- list.files("../results/", pattern = ".*_data-.*.csv",
                          full.names = TRUE, recursive = TRUE)
 
 righty_files <- str_subset(all_files1, "_hands-righty_") %>%
-  str_subset("osampl", negate = TRUE)
+  str_subset("osampl", negate = TRUE) %>%
+  str_subset("baseZ", negate = TRUE)
 
 # Read data in from files
 results <- tibble(f = righty_files) %>%
@@ -88,22 +90,36 @@ results_nested <- results %>%
   ) %>%
   select(-`...1`, -f)
 
-results_mcc <- results_nested %>%
-  nest() %>%
-  mutate(
+# Do the bootstrapping ====
 
-    # Specify only evaluating hemi
-    mcc = map(data, bootstrap_mcc,
-                R = 1000, ground = "ground_hemi", predicted = "pred_hemi",
-                levels = c("LH", "RH"), method = 2,
-              .progress = TRUE),
+results_file <- "results_mcc-righties.rds"
 
-    acc = map_dbl(data, ~sum(.$ground_hemi == .$pred_hemi) / nrow(.)),
+if (!file.exists(results_file)) {
 
-    n_errors = map_int(data, ~sum(.$ground_hemi != .$pred_hemi))
+  results_mcc <- results_nested %>%
+    nest() %>%
+    mutate(
 
-  ) %>%
-  unnest(mcc)
+      # Specify only evaluating hemi
+      mcc = map(data, bootstrap_mcc,
+                  R = 1000, ground = "ground_hemi", predicted = "pred_hemi",
+                  levels = c("LH", "RH"), method = 2,
+                .progress = TRUE),
+
+      acc = map_dbl(data, ~sum(.$ground_hemi == .$pred_hemi) / nrow(.)),
+
+      n_errors = map_int(data, ~sum(.$ground_hemi != .$pred_hemi))
+
+    ) %>%
+    unnest(mcc)
+
+  qs::qsave(results_mcc, results_file)
+
+} else {
+
+  results_mcc <- qs::qread(results_file)
+
+}
 
 results_mcc_summary <- results_mcc %>%
   ungroup() %>%
@@ -127,11 +143,9 @@ ggplot(results_mcc, aes(x = input, y = mcc_mean, color = group)) +
   scale_x_discrete(labels = c("HC", "LgHC", "HC-R")) +
   facet_wrap(vars(method)) +
   theme_bw() +
-  labs(x = "Input data", y = "MCC (95% CI)")
+  labs(x = "Input data", y = "MCC (95% CI)", color = "Test fold")
 
 ggsave("plots/righties_MCC.png", width = 5, height = 3.5, units = "in")
-
-write_rds(results_mcc, "right_handed_results.rds")
 
 # LDA ====
 
@@ -156,33 +170,49 @@ Hmisc::rcorr(as.matrix(righty_LDA_wide[, c("RH", "LH")]))
 t.test(righty_LDA_wide$diff[righty_LDA_wide$gender == "F"],
        righty_LDA_wide$diff[righty_LDA_wide$gender == "M"])
 
-ggplot(righty_LDA_wide, aes(x = LH, y = RH)) +
-  geom_point()
+means <- c(mean(righty_LDA_wide$LH), mean(righty_LDA_wide$RH))
 
 # Reverse colors so L=blue and R=red, following typical convention
 lhrh_colors <- c("#00BFC4", "#F8766D")
 
-righty_LDA_plot <- ggplot(righty_LDA, aes(x = LD1, y = sub, color = hemi)) +
-  geom_point(alpha = 0.5) +
+righty_LDA_plot1 <- ggplot(righty_LDA, aes(x = LD1, y = sub, color = hemi)) +
+  geom_point(alpha = 0.25) +
+  geom_vline(xintercept = means, color = colorspace::darken(lhrh_colors),
+             linewidth = 1) +
+  geom_vline(xintercept = 0, color = "red", linetype = "dashed") +
   scale_x_continuous(breaks = c(-5, 0, 5),
                      labels = c("-5\n(LH)", "0", "5\n(RH)")) +
   scale_y_discrete(labels = NULL, breaks = NULL,
                    expand = expansion(mult = 0.05)) +
   scale_color_manual(values = lhrh_colors) +
   theme_bw() +
-  labs(y = "Participant", color = "Hemisphere") +
-  theme(legend.position = "right")
+  labs(title = "(A)", y = "Participant", color = "Hemisphere") +
+  theme(legend.position = "none")
 
-ggsave(righty_LDA_plot, filename = "plots/righty_LD1_plot.png",
+righty_LDA_corrplot <- ggplot(righty_LDA_wide, aes(x = LH, y = RH)) +
+  geom_point(alpha = 0.25) +
+  geom_vline(xintercept = means[1], color = colorspace::darken(lhrh_colors[1])) +
+  geom_vline(xintercept = 0, color = "red", linetype = "dashed") +
+  geom_hline(yintercept = means[2], color = colorspace::darken(lhrh_colors[2])) +
+  geom_hline(yintercept = 0, color = "red", linetype = "dashed") +
+  geom_smooth(method = "lm") +
+  coord_equal() +
+  theme_bw() +
+  labs(title = "(B)", x = "LH LD1 value", y = "RH LD1 value")
+
+righty_LDA_plot1 + righty_LDA_corrplot + plot_layout(widths = c(1.75, 1))
+
+ggsave(filename = "plots/righty_LD1_plot.png",
        width = 6, height = 3,
        units = "in")
 
+## Plots for SNL poster ====
 
-snl_plot <- righty_LDA_plot +
-  theme(text = element_text(size = 24))
-
-ggsave("plots/snl_righty_LD_plot.png", snl_plot, width = 10, height = 8,
-       units = "in")
+# snl_plot <- righty_LDA_plot +
+#   theme(text = element_text(size = 24))
+#
+# ggsave("plots/snl_righty_LD_plot.png", snl_plot, width = 10, height = 8,
+#        units = "in")
 
 # Scalings ====
 

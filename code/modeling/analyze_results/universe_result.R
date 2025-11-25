@@ -14,7 +14,8 @@ registerDoParallel(cl)
 
 # Setup ====
 
-setwd("~/Google Drive/My Drive/Projects/hemisphere_fingerprinting/code/modeling/analyze_results/")
+setwd(paste0("~/MyDrive/Projects/hemisphere_fingerprinting/code/modeling/",
+             "analyze_results/"))
 source("bootstrap_mcc.R")
 
 # Find data ====
@@ -445,3 +446,4 @@ fourway_aov <- aov(mean ~ method + input + hgroup + group,
                    data = results_4way_2)
 
 TukeyHSD(fourway_aov, which = c("input", "hgroup", "group"))
+

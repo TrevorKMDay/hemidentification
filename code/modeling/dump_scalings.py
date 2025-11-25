@@ -6,9 +6,7 @@ import os
 
 parser = ap.ArgumentParser()
 
-parser.add_argument("pickle",
-                    help="Column to predict")
-
+parser.add_argument("pickle", help="Column to predict")
 parser.add_argument("out")
 
 args = parser.parse_args()
@@ -18,6 +16,7 @@ out = args.out
 
 if not os.path.exists(out):
 
+    print(f"File: {file}")
     with open(file, "rb") as f:
         data = pickle.load(f)
 
@@ -32,3 +31,7 @@ if not os.path.exists(out):
                   axis=1)
 
     x.to_csv(out, index=False)
+
+else:
+
+    print(f"Output file {file} already exists!")

@@ -30,7 +30,7 @@ hands <- read_csv("../../data/restricted_data.csv", show_col_types = FALSE) %>%
   select(sub, EHI, starts_with("handedness"))
 
 ggplot(hands, aes(x = EHI)) +
-  geom_histogram(bins = 40, boundary = 100) +
+  geom_histogram(binwidth = 10, boundary = 5) +
   scale_x_continuous(breaks = seq(-100, 100, 20)) +
   theme_bw()
 
@@ -59,72 +59,81 @@ all_conns <- t(combn(labels$label2, 2)) %>%
 
 ## Function to read data ====
 
-read_data <- function(path, labels, which) {
+read_data <- function(path, columns, which) {
 
-  pairwise <- read_table(path, col_names = labels, show_col_types = FALSE)
+  pairwise <- read_table(path, col_names = columns, show_col_types = FALSE)
 
-  # Remove upper triangle of duplicated r values
-  pairwise[upper.tri(pairwise, diag = TRUE)] <- NA
+  probs <- problems(pairwise)
 
-  # Add ROI1 columns
-  pairwise2 <- pairwise %>%
-    add_column(ROI1 = labels, .before = 1)
+  if (nrow(probs) > 0) {
+    print("Parsing failure")
+    return(NA)
+  } else {
 
-  # Pivot longer and drop upper triangle
-  pairwise3 <- pairwise2 %>%
-    pivot_longer(-ROI1, names_to = "ROI2", values_to = "r") %>%
-    na.omit()
+    # Remove upper triangle of duplicated r values
+    pairwise[upper.tri(pairwise, diag = TRUE)] <- NA
 
-  if (which == "hemi") {
+    # Add ROI1 columns
+    pairwise2 <- pairwise %>%
+      add_column(ROI1 = columns, .before = 1)
 
-    # Keep only within-hemisphere connections
+    # Pivot longer and drop upper triangle
+    pairwise3 <- pairwise2 %>%
+      pivot_longer(-ROI1, names_to = "ROI2", values_to = "r") %>%
+      na.omit()
 
-    keep <- pairwise3 %>%
-      filter(
-        str_extract(ROI1, "^.") == str_extract(ROI2, "^.")
-      ) %>%
-      mutate(
-        new_label = paste0(ROI1, "_", str_remove(ROI2, "^._"))
-      ) %>%
-      separate_wider_delim(new_label, delim = "_", names = c("hemi", "rois"),
-                           too_many = "merge") %>%
-      select(hemi, rois, r) %>%
-      mutate(
-        hemi = paste0(hemi, "H")
-      ) %>%
-      pivot_wider(names_from = rois, values_from = r)
+    if (which == "hemi") {
 
-  } else if (which == "trans") {
+      # Keep only within-hemisphere connections
 
-    # Keep only L<->R connections
+      keep <- pairwise3 %>%
+        filter(
+          str_extract(ROI1, "^.") == str_extract(ROI2, "^.")
+        ) %>%
+        mutate(
+          new_label = paste0(ROI1, "_", str_remove(ROI2, "^._"))
+        ) %>%
+        separate_wider_delim(new_label, delim = "_", names = c("hemi", "rois"),
+                             too_many = "merge") %>%
+        select(hemi, rois, r) %>%
+        mutate(
+          hemi = paste0(hemi, "H")
+        ) %>%
+        pivot_wider(names_from = rois, values_from = r)
 
-    keep <- pairwise3 %>%
-      filter(
-        ROI1 != ROI2,
-        str_extract(ROI1, "^.") != str_extract(ROI2, "^.")
-      ) %>%
-      mutate(
-        new_label = paste0(str_remove(ROI1, "_"), "_", str_remove(ROI2, "_"))
-      ) %>%
-      select(-starts_with("ROI")) %>%
-      pivot_wider(names_from = new_label, values_from = r)
+    } else if (which == "trans") {
 
-  } else if (which == "all") {
+      # Keep only L<->R connections
 
-    # Keep all unique values
+      keep <- pairwise3 %>%
+        filter(
+          ROI1 != ROI2,
+          str_extract(ROI1, "^.") != str_extract(ROI2, "^.")
+        ) %>%
+        mutate(
+          new_label = paste0(str_remove(ROI1, "_"), "_", str_remove(ROI2, "_"))
+        ) %>%
+        select(-starts_with("ROI")) %>%
+        pivot_wider(names_from = new_label, values_from = r)
 
-    keep <- pairwise3 %>%
-      filter(
-      ) %>%
-      mutate(
-        new_label = paste0(ROI1, "_", ROI2)
-      ) %>%
-      select(-starts_with("ROI")) %>%
-      pivot_wider(names_from = new_label, values_from = r)
+    } else if (which == "all") {
+
+      # Keep all unique values
+
+      keep <- pairwise3 %>%
+        filter(
+        ) %>%
+        mutate(
+          new_label = paste0(ROI1, "_", ROI2)
+        ) %>%
+        select(-starts_with("ROI")) %>%
+        pivot_wider(names_from = new_label, values_from = r)
+
+    }
+
+    return(keep)
 
   }
-
-  return(keep)
 
 }
 
@@ -326,8 +335,93 @@ if (!file.exists("inputs/connectome.rds")) {
       across(c(where(is.numeric), -EHI), DescTools::FisherZ)
     )
 
+  all_complete3 %>%
+    select(sub, matches("^[RL]")) %>%
+    pivot_longer(-sub) %>%
+    group_by(sub) %>%
+    summarize(
+      mean = mean(value),
+      sd = sd(value)
+    )
+
   qsave(all_complete3, "inputs/connectome.rds")
   py_save_object(all_complete3, "inputs/connectome.pickle")
+
+  ## Z score =====
+
+  ### All data =====
+
+  all_complete_Z <- all_complete3 %>%
+    pivot_longer(-c(sub, group, gender, age_group, starts_with("handedness"),
+                    EHI),
+                 values_to = "r")
+
+  filter(all_complete_Z, abs(r) == 100)
+
+  all_complete_Z2 <- all_complete_Z %>%
+    group_by(sub) %>%
+    mutate(
+      rZ = scale(r)[, 1]
+    ) %>%
+    select(-r)
+
+  all_complete_Z2 %>%
+    select(sub, matches("^[RL]")) %>%
+    pivot_longer(-sub) %>%
+    group_by(sub) %>%
+    summarize(
+      mean = mean(value),
+      sd = sd(value)
+    )
+
+  all_complete_Z3 <- all_complete_Z2 %>%
+    pivot_wider(values_from = rZ, names_from = name)
+
+  qsave(all_complete_Z3, "inputs/connectome_Z.rds")
+  py_save_object(all_complete_Z3, "inputs/connectome_Z.pickle")
+
+  ### by hemisphere ====
+
+  all_Z_byhemi <- all_complete_Z2 %>%
+    mutate(
+      h1 = str_extract(name, "^."),
+      h2 = str_remove(str_extract(name, "_."), "_")
+    ) %>%
+    filter(
+      h1 == h2
+    ) %>%
+    mutate(
+      hemi = paste0(h1, "H"),
+      name = str_remove(name, "^[LR]") %>%
+        str_replace("_[LR]", "_")
+    ) %>%
+    select(-handedness2, -handedness.y, -h1, -h2)
+
+  all_Z_byhemi %>%
+    group_by(sub) %>%
+    summarize(
+      mean = mean(rZ),
+      sd = sd(rZ)
+    )
+
+  all_Z_byhemi %>%
+    group_by(sub,hemi) %>%
+    summarize(
+      mean = mean(rZ),
+      sd = sd(rZ)
+    )
+
+  all_Z_byhemi_wide <- all_Z_byhemi %>%
+    pivot_wider(names_from = name, values_from = rZ) %>%
+    rename(
+      handedness = handedness.x
+    ) %>%
+    mutate(
+      class = paste0(handedness, hemi)
+    )
+
+  qsave(all_Z_byhemi_wide, "inputs/hemiconnectome_Z.rds")
+  py_save_object(all_Z_byhemi_wide, "inputs/hemiconnectome_Z.pickle")
 
 }
 
@@ -367,3 +461,41 @@ if (!file.exists("inputs/reversed.rds")) {
 
 }
 
+# First half ====
+
+if (!file.exists("inputs/hemiconnectome_run-1.rds")) {
+
+  run1_pconns <- list.files("../../data/pconns_run-1_1113/",
+                            pattern = "*.pconn.txt", full.names = TRUE)
+
+  # Creates all complete connectomes, full size = length(p)
+  run1 <- tibble(f = run1_pconns) %>%
+    mutate(
+      pconn = map(f, ~read_data(.x, labels$label, which = "hemi"),
+                  .progress = TRUE)
+    )
+
+  run1_2 <- run1 %>%
+    mutate(
+      sub = str_extract(f, "sub-[0-9]*")
+    ) %>%
+    select(sub, pconn) %>%
+    unnest(pconn)
+
+  run1_final <- run1_2 %>%
+    left_join(info_cols, join_by(sub)) %>%
+    select(sub, gender, age_group, EHI, group, starts_with("handedness"),
+           everything()) %>%
+    mutate(
+      # Fisher Z transform correlation values - approximate normality
+      across(c(where(is.numeric), -EHI), DescTools::FisherZ),
+      class = paste0(handedness, hemi),
+    ) %>%
+    na.omit()
+
+  # not sure why there's NAs - toss em
+
+  qsave(run1_final, "inputs/half_hemiconnectome.rds")
+  py_save_object(run1_final, "inputs/half_hemiconnectome.pickle")
+
+}

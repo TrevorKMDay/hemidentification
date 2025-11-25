@@ -14,7 +14,7 @@ registerDoParallel(cl)
 
 # Setup ====
 
-setwd(paste0("~/Google Drive/My Drive/Projects/hemisphere_fingerprinting/code/",
+setwd(paste0("~/MyDrive/Projects/hemisphere_fingerprinting/code/",
              "modeling/analyze_results/"))
 
 source("bootstrap_mcc.R")
@@ -97,33 +97,45 @@ results_nested <- results %>%
   mutate(
     input = if_else(subset != "none", paste0(input, subset), input)
   )
-
 subset <- results_nested %>%
   filter(
     input == "base74"
   )
 
-results_mcc <- results_nested %>%
-  nest() %>%
-  mutate(
+results_file <- "results_mcc-lefties.rds"
 
-    hand = map(data, bootstrap_mcc,
-                R = 1000, ground = "ground_hand", predicted = "pred_hand",
-                levels = c("righty", "lefty"), method = 2,
-              .progress = TRUE),
+if (!file.exists(results_file)) {
 
-    # Specify only evaluating hemi
-    hemi = map(data, bootstrap_mcc,
-                   R = 1000, ground = "ground_hemi", predicted = "pred_hemi",
-                   levels = c("LH", "RH"), method = 2,
-                   .progress = TRUE),
+  results_mcc <- results_nested %>%
+    nest() %>%
+    mutate(
 
-    acc = map_dbl(data, ~sum(.$ground_hemi == .$pred_hemi) / nrow(.)),
+      hand = map(data, bootstrap_mcc,
+                  R = 1000, ground = "ground_hand", predicted = "pred_hand",
+                  levels = c("righty", "lefty"), method = 2,
+                .progress = TRUE),
 
-    n_errors = map_int(data, ~sum(.$ground_hemi != .$pred_hemi))
+      # Specify only evaluating hemi
+      hemi = map(data, bootstrap_mcc,
+                     R = 1000, ground = "ground_hemi", predicted = "pred_hemi",
+                     levels = c("LH", "RH"), method = 2,
+                     .progress = TRUE),
 
-  ) %>%
-  unnest(c(hand, hemi), names_sep = ".")
+      acc = map_dbl(data, ~sum(.$ground_hemi == .$pred_hemi) / nrow(.)),
+
+      n_errors = map_int(data, ~sum(.$ground_hemi != .$pred_hemi))
+
+    ) %>%
+    unnest(c(hand, hemi), names_sep = ".")
+
+  qs::qsave(results_mcc, results_file)
+
+} else {
+
+  results_mcc <- qs::qread(results_file)
+
+}
+
 
 # results_mcc_summary <- results_mcc %>%
 #   ungroup() %>%
@@ -191,49 +203,74 @@ lefties_base <- results_mcc %>%
   ungroup() %>%
   filter(
     outcome == "hemi",
-    input == "base"
+    input %in% c("base", "langtask")
   ) %>%
-  select(method, group, hemi.mcc_mean) %>%
-  rename(
-    all_lefties = hemi.mcc_mean
-  )
+  select(method, group, input, hemi.mcc_mean) %>%
+  pivot_wider(values_from = hemi.mcc_mean, names_from = input,
+              names_prefix = "lefties.")
 
 righties_base <- righty_results %>%
   filter(
-    input == "base"
-  )
+    input %in% c("base", "langtask")
+  ) %>%
+  pivot_wider(values_from = righty_mcc, names_from = input,
+              names_prefix = "righty_mcc.")
 
-hc92 <- results_mcc %>%
+hc_small <- results_mcc %>%
   ungroup() %>%
   filter(
-    input == "base92"
+    input == "base74"
   ) %>%
   select(method, group, hemi.mcc_mean) %>%
   rename(
-    hc92 = hemi.mcc_mean
+    hc_small.base = hemi.mcc_mean
   ) %>%
-  left_join(lefties_base) %>%
-  left_join(righties_base)
+  left_join(lefties_base, by = join_by(method, group)) %>%
+  left_join(righties_base, by = join_by(method, group))
 
-t.test(hc92$hc92, hc92$righty_mcc, paired = "TRUE")
+## Small/big R =====
 
-hc92_models <- hc92 %>%
-  group_by(method) %>%
-  nest() %>%
+t.test(hc_small$hc_small.base, hc_small$righty_mcc.base, paired = TRUE)
+
+subset_d <- (mean(hc_small$righty_mcc) - mean(hc_small$hc_small)) /
+              sd(c(hc_small$righty_mcc, hc_small$hc_small))
+
+# data:  hc_small$hc_small and hc_small$righty_mcc
+# t = -4.2188, df = 14, p-value = 0.0008587
+# alternative hypothesis: true mean difference is not equal to 0
+# 95 percent confidence interval:
+#   -0.018131909 -0.005909451
+# sample estimates:
+#   mean difference
+# -0.01202068
+
+hc_small_models <- hc_small %>%
+  select(method, group, ends_with("base"), ends_with("langtask"),
+         -hc_small.base) %>%
+  pivot_longer(-c(method, group), names_to = c("hand", "input"),
+               names_sep = "[.]", values_to = "mcc") %>%
   mutate(
-    n = map_int(data, nrow),
-    mean_lefties = map_dbl(data, ~mean(.x$all_lefties)),
-    mean_hc92 = map_dbl(data, ~mean(.x$hc92)),
-
-    t_test = if_else(mean_lefties == 1,
-                     map(data, ~t.test(.x$hc92, mu = 1)),
-                     map(data, ~t.test(.x$all_lefties, .x$hc92))),
-
-    p_value = map_dbl(t_test, ~ .x$p.value)
-
+    group2 = if_else(hand == "lefties", paste0(group, "L"), paste0(group, "R"))
   )
 
-hc92_models$p_adj <- p.adjust(hc92_models$p_value, "fdr", n = 3)
+lVr_lm <- lmerTest::lmer(mcc ~ hand*method*input + (1|group2),
+                           data = hc_small_models)
+
+summary(lVr_lm)
+
+## HC-R ====
+
+lefties_rev <- results_mcc %>%
+  ungroup() %>%
+  filter(
+    input == "rev"
+  ) %>%
+  select(method, group, input, hemi.mcc_mean)
+
+rev_lm <- lmerTest::lmer(hemi.mcc_mean ~ method + (1|group),
+                         data = lefties_rev)
+
+summary(rev_lm)
 
 # Hemi lefties =====
 
@@ -241,7 +278,8 @@ hemi_results <- results_mcc %>%
   ungroup() %>%
   filter(
     outcome == "hemi" | input == "base74",
-    input != "full"
+    input != "full",
+    input != "baseZ"
   ) %>%
   select(-starts_with("hands"))
 
@@ -250,12 +288,12 @@ ggplot(hemi_results, aes(x = input, y = hemi.mcc_mean, color = group)) +
   geom_pointrange(aes(ymin = hemi.mcc_ci_lo, ymax = hemi.mcc_ci_hi),
                   position = position_dodge2(width = 0.5),
                   alpha = 0.75) +
+  facet_wrap(vars(method)) +
   scale_x_discrete(labels = c("HC\n(L)", "HC74\n(R)", "LgHC\n(L)",
                               "HC-R\n(L)")) +
   scale_y_continuous(limits = c(NA, NA), breaks = c(0.5, 0.75, 1)) +
-  facet_wrap(vars(method)) +
   theme_bw() +
-  labs(x = "Input data", y = "MCC (95% CI)")
+  labs(x = "Input data", y = "MCC (95% CI)", color = "Test fold")
 
 ggsave("plots/lefties_MCC.png", width = 6.5, height = 3.5, units = "in")
 
@@ -305,7 +343,7 @@ ggplot(hand_results, aes(x = input, y = hand.mcc_mean, color = group)) +
                               "TC\n(L)")) +
   facet_wrap(vars(method)) +
   theme_bw() +
-  labs(x = "Input data", y = "MCC (95% CI)")
+  labs(x = "Input data", y = "MCC (95% CI)", color = "Test fold")
 
 results_mcc %>%
   filter(
@@ -317,7 +355,7 @@ results_mcc %>%
     max = max(hemi.mcc_mean)
   )
 
-ggsave("plots/handedness_MCC.png", r_hands, width = 6.5, height = 3.5,
+ggsave("plots/handedness_MCC.png", width = 6.5, height = 3.5,
        units = "in")
 
 # ANOVA ====
