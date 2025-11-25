@@ -23,3 +23,7 @@ code/modeling/subsets/
 **/*.csv
 **/*.rds
 **/*.zip
+**/*.pickle
+
+Files that are too big
+**/*.nii
