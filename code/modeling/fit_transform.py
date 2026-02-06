@@ -19,16 +19,17 @@ out = args.out
 if not os.path.exists(out):
 
     with open(model_f, "rb") as f:
-        print("Loading model")
+        print(f"Loading model from {model_f}")
         model = pickle.load(f)
 
     with open(data_f, "rb") as f:
-        print("Loading data")
-        data = pickle.load(f)
+        # Load data and cast to Pandas data frame
+        print(f"Loading data from {data_f}")
+        data = pd.DataFrame(pickle.load(f))
 
     print("Fitting")
 
-    features = model.feature_names_in_
+    features = model.feature_names_in_.tolist()
     data2 = data[features]
     id = data.drop(features, axis=1)
 

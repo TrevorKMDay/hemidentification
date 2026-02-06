@@ -88,9 +88,11 @@ python run_model.py                                      \
     --output_name   "lda_full/full_class_run1.csv"       \
     class inputs/half_hemiconnectome.pickle within lda
 
-python dump_scalings.py \
-    "lda_full/full_class_run1.pickle" \
-    "lda_full/full_class_run1_scalings.csv"
+# args: model data out
+python fit_transform.py \
+    lda_full/full_class_run1.pickle     \
+    inputs/half_hemiconnectome.pickle   \
+    lda_full/run1_xform.csv
 
 # Four-class model (Z-scored) ==========
 

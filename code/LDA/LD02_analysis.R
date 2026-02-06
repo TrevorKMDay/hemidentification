@@ -1,5 +1,6 @@
 library(tidyverse)
 library(igraph)
+library(ggExtra)
 
 # Setup ====
 
@@ -9,6 +10,7 @@ setwd("~/MyDrive/Projects/hemisphere_fingerprinting/code/LDA")
 
 # Load data ====
 
+# This is the input data: Z-scored
 hc <- qs::qread("../modeling/inputs/hemiconnectome.rds")
 
 table(hc$handedness) / 2
@@ -39,7 +41,7 @@ xform1 <- xform0 %>%
     ground = class
   )
 
-qs::qsave(xform1, "hc_xform_allgroups.rds")
+qs::qsave(xform1, "hc_xform_30min_Zscored.rds")
 
 # This produces strong separation in classes, is this from the self train/test
 # sample?
@@ -567,8 +569,6 @@ lm(nondom_dex ~ gender, data = EHI) %>% summary()
 
 lm(LI_dex ~ gender, data = EHI) %>% summary()
 
-
-
 ggplot(data = EHI, aes(x = EHI, y = LI_dex, color = gender)) +
   geom_point() +
   geom_smooth(method = "lm") +
@@ -732,7 +732,6 @@ dev.off()
 
 ## LD1, LD3 ====
 
-png("plots/ld1_ld3.png", width = 6, height = 4, res = 300, units = "in")
 
 ggplot(mapping = aes(x = LD1, y = LD3)) +
   geom_point(data = xform,
@@ -771,11 +770,9 @@ ggplot(mapping = aes(x = LD1, y = LD3)) +
            x = xform_summary2$mean_LD1 - xform_summary2$se_LD1,
            xend = xform_summary2$mean_LD1 + xform_summary2$se_LD1)
 
-dev.off()
+ggsave("plots/ld1_ld3.png", width = 6, height = 4)
 
 # LD3 plots ====
-
-png("plots/ld2_ld3.png", width = 4, height = 5, units = "in", res = 300)
 
 ggplot(mapping = aes(x = LD2, y = LD3)) +
   geom_point(data = xform,
@@ -798,4 +795,42 @@ ggplot(mapping = aes(x = LD2, y = LD3)) +
                          nrow = 2, byrow = FALSE)
   )
 
-dev.off()
+ggsave("plots/ld2_ld3.png", width = 6, height = 4)
+
+# ld1_ld2_plot_v2 <-
+
+xform_display <- xform %>%
+  mutate(
+    across(c(LD1), abs)
+  )
+
+ggplot(data = xform_display, mapping = aes(x = LD1, y = LD2)) +
+  geom_point(
+             aes(fill = label, color = label, alpha = label, shape = label),
+             size = 2, stroke = 1,
+             show.legend = TRUE) +
+  facet_wrap(vars(hemi)) +
+  scale_shape_manual(values = c(21, 21, 18, 23)) +
+  scale_alpha_manual(values = c(1, 1, 0.25, 1)) +
+  scale_color_manual(values = c("black","pink3", "grey50", "black")) +
+  scale_fill_manual(values = c(lefty_color, lefty_color, "grey50", "grey50")) +
+  scale_x_continuous(breaks = c(-5, 0, 5),
+                     labels = c("-5 (LH)", "0", "5 (RH)"),
+                     sec.axis = dup_axis(breaks = c(-5, 5),
+                                         labels = c(expression(Z(LD1)[LH]*" = 0"),
+                                                    expression(Z(LD1)[RH]*" = 0")),
+                                         name = NULL)) +
+  theme_bw() +
+  labs(x = "LD1 (95%)", y = "LD2 (3%)",
+       color = "Handedness-1", fill = "Handedness-1", shape = "Handedness-1",
+       alpha = "Handedness-1",
+       # caption = "All hemispheres were classified correctly."
+  ) +
+  theme(legend.position = "bottom") +
+  guides(
+    shape = guide_legend(override.aes = list(alpha = 1),
+                         nrow = 2, byrow = FALSE)
+  ) +
+  coord_fixed(ratio = 1/8)
+
+ggsave("plots/ld1_ld2_squished8.png", width = 6, height = 4)

@@ -313,7 +313,6 @@ def model(train1, test1, shuffle_labels=False, verbose=False):
     return(results)
 
 
-
 if bootstrap > 0:
 
     bs_results_all = list()

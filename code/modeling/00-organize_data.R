@@ -466,7 +466,8 @@ if (!file.exists("inputs/reversed.rds")) {
 if (!file.exists("inputs/hemiconnectome_run-1.rds")) {
 
   run1_pconns <- list.files("../../data/pconns_run-1_1113/",
-                            pattern = "*.pconn.txt", full.names = TRUE)
+                            pattern = ".*_seg-Glasser_.*.pconn.txt",
+                            full.names = TRUE)
 
   # Creates all complete connectomes, full size = length(p)
   run1 <- tibble(f = run1_pconns) %>%
@@ -497,5 +498,11 @@ if (!file.exists("inputs/hemiconnectome_run-1.rds")) {
 
   qsave(run1_final, "inputs/half_hemiconnectome.rds")
   py_save_object(run1_final, "inputs/half_hemiconnectome.pickle")
+
+  # z score
+
+  # run1_final_Z <- run1_final %>%
+  #   pivot_longer(-c(hemi, class, colnames(info_cols))) %>%
+  #   grou
 
 }
