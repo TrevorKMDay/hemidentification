@@ -1,5 +1,5 @@
 library(tidyverse)
-library(qs)
+library(qs2)
 library(reticulate)
 
 select <- dplyr::select
@@ -56,6 +56,14 @@ all_conns <- t(combn(labels$label2, 2)) %>%
   mutate(
     conn = paste(V1, V2, sep = "_")
   )
+
+# Networks ====
+
+networks <- read_csv("../../data/ColeAnticevicNetPartition/all_parcels_to_networks.csv")
+
+motor_rois <- c(networks$label2[networks$L == "Somatomotor"],
+                networks$label2[networks$R == "Somatomotor"]) %>%
+  unique()
 
 ## Function to read data ====
 
@@ -162,8 +170,43 @@ groups_summary <- groups %>%
 
 # Hemi/trans connectome ====
 
+library(groupdata2)
+
 info_cols <- left_join(hands, sex, by = join_by(sub)) %>%
   left_join(groups, by = join_by(sub, handedness))
+
+# Create a new info column data frame that splits into one hemisphere per
+# participant in a balanced way
+info_cols_onehemi <- info_cols %>%
+  select(-handedness2) %>%
+  ungroup() %>%
+  mutate(
+    sub = as.factor(sub)
+  ) %>%
+  fold(data = ., k = 2,
+       id_col = "sub",
+       # For some reason, this wouldn't balance based on EHI, so dichotimized
+       # handedness it is.
+       cat_col = c("gender", "age_group", "group", "handedness")) %>%
+  rename(
+    hemi_to_keep = .folds
+  ) %>%
+  mutate(
+    hemi_to_keep = if_else(hemi_to_keep == 1, "LH", "RH")
+  )
+
+t.test(EHI ~ hemi_to_keep, data = info_cols_onehemi)
+
+## Demographic validation
+
+demo_valid <- info_cols %>%
+  group_by(group) %>%
+  nest() %>%
+  mutate(
+
+    ehi_ttest = map(data, ~t.test(EHI ~ gender, data = .x))
+
+  )
 
 ## Hemiconnectome ====
 
@@ -196,8 +239,36 @@ if (!file.exists("inputs/hemiconnectome.rds")) {
       across(c(where(is.numeric), -EHI), DescTools::FisherZ)
     )
 
-  qsave(all_data3, "inputs/hemiconnectome.rds")
+  qs_save(all_data3, "inputs/hemiconnectome.rds")
   py_save_object(all_data3, "inputs/hemiconnectome.pickle")
+
+  # Read formatted data back in
+  all_data3 <- qs_read("inputs/hemiconnectome.rds")
+
+  strong_lefties <- all_data3 %>%
+    filter(
+      EHI <= -75
+    ) %>%
+    group_by(sub) %>%
+    mutate(
+      group = str_pad(cur_group_id(), width = 2, pad = "0",)
+    )
+
+  qs_save(strong_lefties, "inputs/strong_lefties.rds")
+  py_save_object(strong_lefties, "inputs/strong_lefties.pickle")
+
+  # Use the folds created above to reduce to one hemisphere per particpant
+  # Right join uses only the rows from all_data3, but puts the info columns
+  #   up front.
+  one_hemisphere <- right_join(info_cols_onehemi, all_data3,
+                               by = join_by(sub, EHI, handedness, gender,
+                                            age_group, group)) %>%
+    filter(
+      hemi == hemi_to_keep
+    )
+
+  qs_save(one_hemisphere, "inputs/one_hemisphere.rds")
+  py_save_object(one_hemisphere, "inputs/one_hemisphere.pickle")
 
 }
 
@@ -227,7 +298,7 @@ if (!file.exists("inputs/transconnectome.rds")) {
       across(c(where(is.numeric), -EHI), DescTools::FisherZ)
     )
 
-  qsave(all_trans3, "inputs/transconnectome.rds")
+  qs_save(all_trans3, "inputs/transconnectome.rds")
   py_save_object(all_trans3, "inputs/transconnectome.pickle")
 
 }
@@ -270,7 +341,7 @@ if (!file.exists("inputs/transconnectome.rds")) {
       across(c(where(is.numeric), -EHI), DescTools::FisherZ)
     )
 
-  qsave(all_lang_data3, "inputs/hemiconnectome_language.rds")
+  qs_save(all_lang_data3, "inputs/hemiconnectome_language.rds")
   py_save_object(all_lang_data3, "inputs/hemiconnectome_language.pickle")
 
 }
@@ -301,7 +372,7 @@ if (!file.exists("inputs/transconnectome_language.rds")) {
       across(c(where(is.numeric), -EHI), DescTools::FisherZ)
     )
 
-  qsave(transconnectome_lang_Z, "inputs/transconnectome_language.rds")
+  qs_save(transconnectome_lang_Z, "inputs/transconnectome_language.rds")
   py_save_object(transconnectome_lang_Z,
                  "inputs/transconnectome_language.pickle")
 
@@ -344,8 +415,22 @@ if (!file.exists("inputs/connectome.rds")) {
       sd = sd(value)
     )
 
-  qsave(all_complete3, "inputs/connectome.rds")
+
+  qs_save(all_complete3, "inputs/connectome.rds")
   py_save_object(all_complete3, "inputs/connectome.pickle")
+
+  # Motor
+
+  motor_regex <- paste0(motor_rois, collapse = "|")
+
+  all_complete3 <- qs::qread("inputs/connectome.rds", nthreads = 10)
+
+  motor <- all_complete3 %>%
+    select(sub, gender, group, age_group, handedness,
+            matches(str_glue("^[RL]({motor_regex})_[RL]({motor_regex})$")))
+
+  qs_save(motor, "inputs/motor_connectome.rds")
+  py_save_object(motor, "inputs/motor_connectome.pickle")
 
   ## Z score =====
 
@@ -377,7 +462,7 @@ if (!file.exists("inputs/connectome.rds")) {
   all_complete_Z3 <- all_complete_Z2 %>%
     pivot_wider(values_from = rZ, names_from = name)
 
-  qsave(all_complete_Z3, "inputs/connectome_Z.rds")
+  qs_save(all_complete_Z3, "inputs/connectome_Z.rds")
   py_save_object(all_complete_Z3, "inputs/connectome_Z.pickle")
 
   ### by hemisphere ====
@@ -420,7 +505,7 @@ if (!file.exists("inputs/connectome.rds")) {
       class = paste0(handedness, hemi)
     )
 
-  qsave(all_Z_byhemi_wide, "inputs/hemiconnectome_Z.rds")
+  qs_save(all_Z_byhemi_wide, "inputs/hemiconnectome_Z.rds")
   py_save_object(all_Z_byhemi_wide, "inputs/hemiconnectome_Z.pickle")
 
 }
@@ -456,7 +541,7 @@ if (!file.exists("inputs/reversed.rds")) {
       across(c(where(is.numeric), -EHI), DescTools::FisherZ)
     )
 
-  qsave(rev_final, "inputs/reversed.rds")
+  qs_save(rev_final, "inputs/reversed.rds")
   py_save_object(rev_final, "inputs/reversed.pickle")
 
 }
@@ -496,7 +581,7 @@ if (!file.exists("inputs/hemiconnectome_run-1.rds")) {
 
   # not sure why there's NAs - toss em
 
-  qsave(run1_final, "inputs/half_hemiconnectome.rds")
+  qs_save(run1_final, "inputs/half_hemiconnectome.rds")
   py_save_object(run1_final, "inputs/half_hemiconnectome.pickle")
 
   # z score

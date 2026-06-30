@@ -27,7 +27,7 @@ parser.add_argument("predict",
 parser.add_argument("data",
                     help="Pickle file with data.")
 
-parser.add_argument("test_group", choices=["A", "B", "C", "D", "E", "within"],
+parser.add_argument("test_group", # choices=["A", "B", "C", "D", "E", "within"],
                     help="Which test group to hold out.")
 
 parser.add_argument("method", choices=["sv", "nn", "lda"],
@@ -56,6 +56,9 @@ parser.add_argument("--subset", "-s", type=int, metavar="N",
                     default=0,
                     help="Subset N subjects from the training data.")
 
+parser.add_argument("--drop_cols", nargs="+",
+                    help="Additional columsn to drop")
+
 
 parser.add_argument("--force", action="store_true")
 
@@ -74,6 +77,7 @@ hemis = args.hemis
 bootstrap = args.bootstrap
 verbose = args.verbose
 subset = args.subset
+cols2drop = args.drop_cols
 
 opath = Path(args.output_dir) if args.output_dir is not None else None
 oname = args.output_name
@@ -113,6 +117,12 @@ with open(input_data, "rb") as f:
     # print(data)
 
 print(f" - Data loaded from {input_data}")
+
+# Check for NaNs
+
+nans = data[data.isna().any(axis=1)]
+print(nans)
+
 
 # Check outcome =====
 
@@ -176,8 +186,18 @@ if hemis is not None:
 
 if test_group != "within":
 
+    assert "group" in data.columns, "No group column found in data!"
+
+    print(data)
+
     test1 = data[data["group"] == test_group]
     train1 = data[data["group"] != test_group]
+
+    # Make sure there is train/test data to investigate
+    assert train1.shape[0] > 0, \
+        "No rows found in training data, check arguments!"
+
+    assert test1.shape[0] > 0, "No rows found in test data, check arguments!"
 
 else:
 
@@ -213,8 +233,13 @@ if hands is not None:
 print()
 print(f" - Using method {method}!")
 
+# The classifier should only include the actual observations and outcome
 labels_to_drop = ["sub", "handedness", "handedness2", "group", "gender",
-                    "age", "age_group", "hemi", "class", "class2", "EHI"]
+                    "age", "age_group", "hemi", "class", "class2", "EHI",
+                    outcome]
+
+if cols2drop is not None:
+    labels_to_drop += cols2drop
 
 def model(train1, test1, shuffle_labels=False, verbose=False):
 
@@ -229,6 +254,9 @@ def model(train1, test1, shuffle_labels=False, verbose=False):
     # Create groups
     train_labels = train1[outcome]
     train_data = train1.drop(labels_to_drop, axis = 1, errors = "ignore")
+
+    unique_train_labels = list(set(train_labels))
+    print(f" - All labels in training set: {unique_train_labels}")
 
     # Shuffle labels for bootstrapping
     if shuffle_labels:
@@ -295,14 +323,20 @@ def model(train1, test1, shuffle_labels=False, verbose=False):
 
         # To do: Equivalent for float
 
-        acc = clf.score(test_data, test_labels)
-        print(f"Accuracy: {round(acc, 3)}")
-
-        c = metrics.confusion_matrix(test_labels, test_result)
+        c = metrics.confusion_matrix(test_labels, test_result,
+                                        labels=unique_train_labels)
+        print("-----------------")
+        print("Confusion matrix:")
         print(c)
+        print("-----------------")
 
-        mcc = metrics.matthews_corrcoef(test_labels, test_result)
-        print(f"MCC: {round(mcc, 3)}")
+        acc = clf.score(test_data, test_labels)
+        mcc = metrics.matthews_corrcoef(test_labels, test_result) #, labels=unique_train_labels)
+
+        print("---------------")
+        print(f"Accuracy: {round(acc, 3)}")
+        print(f"MCC:      {round(mcc, 3)}")
+        print("---------------")
 
     # Summarize results
 
