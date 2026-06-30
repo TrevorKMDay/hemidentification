@@ -1,0 +1,34 @@
+# Inputs and outputs
+
+## hemiconnectome.rds
+
+Fisher-Z transformed connectivity values for all participants from the
+resting-state data.
+
+## hc_hpZ.rds
+
+This is `hemiconnectome`, but normalized with-hemisphere, per participant,
+i.e. `Z(FisherZ(r))`. "hpZ" stands for normalized within Hemisphere/Participant.
+
+This is used to ask the questions:
+
+ 1. Can you predict hemisphere polarity from normalized connectomes?
+ 2. Can you predict hemisphere polarity from normalized connectomes when only
+    one hemisphere from participant is included ("1p")?
+
+## hemiconnectome_LL/RR
+
+Correlation matrices generated from parcellations where the LH ROIs were
+flipped onto the RH (LL) and RH ROIs flipped onto the LH (RR). Used to
+investigate whether the classifier success is due to asymmetries in the
+underlying parcellation.
+
+## Directories
+
+**03-right_handed**: Run the models on the right-handed participants.
+
+**03-left_handed**: Run the models on the left-handed participants *and* the
+matched right-handed participants.
+
+**04-dim_reduce**: Run the dimension-reduction algorithm on the lefties,
+righties and matched-righty groups.
