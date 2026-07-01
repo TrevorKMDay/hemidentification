@@ -27,3 +27,5 @@ code/modeling/subsets/
 
 Files that are too big
 **/*.nii
+
+__pycache__

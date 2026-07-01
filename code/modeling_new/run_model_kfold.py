@@ -7,6 +7,7 @@ import matplotlib.pyplot as plt
 import copy
 import sklearn
 import os
+import time
 
 from sklearn.metrics import matthews_corrcoef
 from pathlib import Path
@@ -37,6 +38,7 @@ def bootstrap_mcc_value(y_true, y_pred, n_reps=500):
 
 def run_my_kfold(data_tuple, outcome_cols, id_cols, classifier,
                  output_dir, group_col="group", bootstrap_mcc=False,
+                 shuffle_train_labels = True,
                  collapse_mcc=True, dump_scalings=False):
 
     """
@@ -107,6 +109,7 @@ def run_my_kfold(data_tuple, outcome_cols, id_cols, classifier,
 
     print(f"    Final ID columns: {id_cols_local}")
 
+
     # Create new outcome column by joining names
     all_outcomes = '.'.join(outcome_cols)
     # Create an outcome column for crossed vars if necessary
@@ -122,16 +125,23 @@ def run_my_kfold(data_tuple, outcome_cols, id_cols, classifier,
     group_mccs = pd.DataFrame(columns=["group", "mcc", "mcc_ci_lo", 
                                        "mcc_ci_hi"])
 
+
     # Save results
-    output_name = Path(output_dir) / \
-        f"data-{data_name}_clf-{classifier}_outcome-{all_outcomes}_results.csv"
+    if output_dir is not None:
 
-    scalings_name = Path(output_dir) / \
-        f"data-{data_name}_clf-{classifier}_outcome-{all_outcomes}_scalings.csv"
+        if not os.path.exists(Path(output_dir)):
+            os.mkdir(Path(output_dir))
+            print(f"    ! Created directory {output_dir}")
 
-    if os.path.exists(output_name):
-        print(f"Requested output file {output_name} already exists!")
-        return()
+        output_name = Path(output_dir) / \
+            f"data-{data_name}_clf-{classifier}_outcome-{all_outcomes}_results.csv"
+
+        scalings_name = Path(output_dir) / \
+            f"data-{data_name}_clf-{classifier}_outcome-{all_outcomes}_scalings.csv"
+
+        if os.path.exists(output_name):
+            print(f"Requested output file {output_name} already exists!")
+            return()
 
     # Get the groups from the group column
     if group_col is not None:
@@ -159,6 +169,9 @@ def run_my_kfold(data_tuple, outcome_cols, id_cols, classifier,
         # Extract the ground truths
         train_y = train[all_outcomes].tolist()
         test_y = test[all_outcomes].reset_index(drop=True)
+
+        if shuffle_train_labels:
+            train_y = np.random.permutation(train_y)
 
         # Extract the columns to re-add to the output
         # train_id = train[id_cols_local]
@@ -190,8 +203,11 @@ def run_my_kfold(data_tuple, outcome_cols, id_cols, classifier,
         y_hat = model.predict(test_x)
 
         # Get the LD values and add it to the results
-        if clf == "lda":
+        if classifier == "lda":
+            print(test_x)
             y_transform = pd.DataFrame(model.transform(test_x))
+
+            # Give the columns better names, starting with LD1, not LD0
             y_transform.columns = [f"LD{x}" for x 
                                     in range(1, y_transform.shape[1] + 1)]
 
@@ -202,7 +218,8 @@ def run_my_kfold(data_tuple, outcome_cols, id_cols, classifier,
         results = pd.concat([test_id, test_y], axis=1)
         results["predicted"] = y_hat
 
-        if clf == "lda":
+        if classifier == "lda":
+            print(y_transform)
             results = pd.concat([results, y_transform], axis=1)
 
         print(results)
@@ -226,11 +243,16 @@ def run_my_kfold(data_tuple, outcome_cols, id_cols, classifier,
             group_mccs = pd.concat([group_mccs, group_row])
 
         # If requested, save the scalings to a CSV
-        if dump_scalings and classifier == "lda":
+        if classifier == "lda":
+
             scalings = pd.DataFrame(model.scalings_)
-            n_cols = scalings.shape[1]
-            scalings.to_csv(scalings_name, index=False,
-                            header=[f"LD{x}" for x in range(1, n_cols + 1)])
+            scalings.columns = ["scaling"]
+            scalings["feature"] = model.feature_names_in_
+
+            if output_dir is not None and dump_scalings:
+                n_cols = scalings.shape[1]
+                scalings.to_csv(scalings_name, index=False,
+                                header=[f"LD{x}" for x in range(1, n_cols + 1)])
 
         results_df = pd.concat([results_df, results])
 
@@ -281,13 +303,73 @@ def run_my_kfold(data_tuple, outcome_cols, id_cols, classifier,
     #         print(f"MCC ({o}):   {o_mcc:.3f} [{o_mcc_CI[0]:.3f}, ",
     #               f"{o_mcc_CI[1]:.3f}]")
 
-    results_df.to_csv(output_name, index=False)
-    print(f"Saved to {output_name}!")
+    if output_dir is not None:
+        results_df.to_csv(output_name, index=False)
+        print(f"Saved to {output_name}!")
 
     # Put the overall MCC into an easily readable dataframe for later
-    overall_mcc_df = pd.DataFrame({"mcc": float(mcc), 
-                                   "mcc_ci_lo": float(mcc_CI[0]),
-                                   "mcc_ci_hi": float(mcc_CI[1])},
-                                  index=[0])
+    if bootstrap_mcc:
+        overall_mcc = pd.DataFrame({"mcc": float(mcc), 
+                                       "mcc_ci_lo": float(mcc_CI[0]),
+                                       "mcc_ci_hi": float(mcc_CI[1])},
+                                      index=[0])
+    else:
+        overall_mcc = float(mcc)
 
-    return((results_df, group_mccs, overall_mcc_df))
+    result = [results_df, group_mccs, overall_mcc]
+    if classifier == "lda":
+        result += [scalings]
+
+    return(result)
+
+
+def create_null_distribution(data_tuple, cols_to_shuffle, id_cols, 
+                             output_dir, n=10000):
+
+    # Unpack data
+    dt = copy.deepcopy(data_tuple)
+    label, data = dt
+    label = f"{label}.null"
+
+    print(f"Shuffling columns: {cols_to_shuffle}")
+    cols = '.'.join(cols_to_shuffle)
+
+    results = [None] * n
+
+    for i in range(0, n):
+
+        start_time = time.perf_counter()
+
+        new_label = f"{label}_bs-{i}"
+        new_data = (new_label, data)
+
+        _, _, _, temp_result = \
+            run_my_kfold(new_data, 
+                         outcome_cols=cols_to_shuffle, id_cols=id_cols,
+                         output_dir=None, 
+                         shuffle_train_labels=True,
+                         group_col=None, classifier="lda", dump_scalings=True)
+
+        temp_result["bs"] = i
+
+        results[i] = temp_result
+
+        end_time = time.perf_counter()
+        execution_time = end_time - start_time
+
+        if i == 0:
+
+            total_sec = n*execution_time
+            total_min = total_sec / 60
+
+            print("\nTiming info:")
+            print(f"Execution time: {execution_time:.2f} sec")
+            print(f"Total estimated time: {total_sec:.2f} sec " + \
+                    f"({total_min:.1f}) min")
+            input("Press enter to execute")
+
+    final_result = pd.concat(results)
+
+    final_result.to_csv(Path(output_dir) / 
+                        f"data-{label}_shuffle-{cols}_n-{n}_bsscalings.csv",
+                        index=False)

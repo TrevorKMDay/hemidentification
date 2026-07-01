@@ -1,0 +1,15 @@
+# 07-bootstrapping
+
+Generates files of the format:
+
+    data-{data}.null_shuffle-{columns}_n-{N}_bsscalings.csv
+
+Where `data` is the name of the input data, `columns` is the columns that were
+shuffled (moree than one can be shuffled), and `N` is the number of repetitions.
+
+Thus, this file is `1 + 16110*N` rows long.
+
+I then manually zip them for space, which R can still read zipped CSVs.
+
+The bootstrapping procedure can take a long time, so lower-N files exist for
+testing purposes.

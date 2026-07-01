@@ -1,5 +1,7 @@
 library(tidyverse)
+library(segmented)
 
+select <- dplyr::select
 
 home <- "/Users/tkmd/MyDrive/Projects/hemisphere_fingerprinting/code/modeling_new/04-dim_reduce"
 setwd(home)
@@ -124,3 +126,39 @@ ggplot(variance, aes(x = k_log, y = coef_var, color = input)) +
   geom_point() +
   geom_line() +
   theme_bw()
+
+# Segmented regression ====
+
+best_model_all <- best_model %>%
+  filter(
+    input == "All participants"
+  )
+
+lm0 <- lm(dist ~ 1, data = best_model_all)
+lm1 <- lm(dist ~ EHI, data = best_model_all)
+
+lm1_seg1 <- segmented(lm1, seg.Z = ~EHI, npsi = 1)
+anova(lm0, lm1, lm1_seg1) # OK
+AIC(lm0, lm1, lm1_seg1) # OK
+
+lm1_seg2 <- segmented(lm1, seg.Z = ~EHI, npsi = 2)
+anova(lm0, lm1, lm1_seg1, lm1_seg2) # OK
+AIC(lm0, lm1, lm1_seg1, lm1_seg2) # OK
+
+lm1_seg3 <- segmented(lm1, seg.Z = ~EHI, npsi = 3)
+anova(lm0, lm1, lm1_seg1, lm1_seg2, lm1_seg3) # OK
+AIC(lm0, lm1, lm1_seg1, lm1_seg2, lm1_seg3) # OK
+
+best_model_segmented <- best_model_all %>%
+  mutate(
+    seg1_groups = if_else(EHI > lm1_seg1$psi[2], "g1", "g2")
+  )
+
+ggplot(best_model_segmented, aes(x = EHI, y = dist)) +
+  geom_jitter(width = 0.25, height = 0, alpha = 0.5)  + 
+  geom_smooth(aes(group = seg1_groups), method = "lm") +
+  geom_vline(xintercept = 0.5, color = "red") +
+  theme_bw() +
+  labs(y = "Hemisphere distance")
+
+ggsave("plots/ehi_distance_1bp.png", width = 6.5, height = 3.5)

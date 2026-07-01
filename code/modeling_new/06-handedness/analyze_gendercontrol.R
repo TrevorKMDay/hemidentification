@@ -254,11 +254,21 @@ results_summary <- bind_rows(hand_only_summary, class_summary,
 results_lda <- results %>%
   filter(
     clf == "clf-lda"
+  ) %>%
+  mutate(
+    mcc = str_remove(mcc, "mcc_") %>%
+      str_to_sentence(),
+    input = toupper(str_remove(input, "data-"))
   )
 
 results_summary_lda <- results_summary %>%
   filter(
     clf == "clf-lda"
+  ) %>%
+  mutate(
+    mcc = str_remove(mcc, "mcc_") %>%
+      str_to_sentence(),
+    input = toupper(str_remove(input, "data-"))
   )
 
 ggplot(results_lda, aes(x = gender_comparison, color = mcc)) +
@@ -267,7 +277,7 @@ ggplot(results_lda, aes(x = gender_comparison, color = mcc)) +
     position = position_dodge2(width = .5)
   ) +
   geom_line(
-    data = filter(results_summary_lda, mcc == "mcc_hand"), 
+    data = filter(results_summary_lda, mcc == "Hand"), 
     aes(x = gender_comparison, y = mcc_mean, group = input),
     linewidth = 1.5
   ) +
@@ -281,7 +291,11 @@ ggplot(results_lda, aes(x = gender_comparison, color = mcc)) +
   scale_x_discrete(labels = c("No", "Yes")) +
   facet_wrap(vars(input), scales = "free_x") +
   theme_bw() + 
-  labs(x = "With gender", y = "MCC (95% CI)")
+  labs(x = "With gender", y = "MCC (95% CI)", color = "Prediction", 
+        fill = "Prediction") +
+  theme(legend.position = "bottom")
+
+ggsave("plots/gender_changeinMCC.png", width = 6.5, height = 4)
 
 gender_effect <- aov(mcc_mean ~ group + input + gender_comparison,
                       data = filter(results_lda, mcc == "mcc_hand"))
