@@ -24,6 +24,7 @@ code/modeling/subsets/
 **/*.rds
 **/*.zip
 **/*.pickle
+**/*.RData
 
 Files that are too big
 **/*.nii
